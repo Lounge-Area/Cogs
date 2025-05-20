@@ -1,0 +1,14 @@
+{
+    "author": ["Lounge"],
+    "name": "VoteTracker",
+    "install_msg": "Thanks for installing the VoteTracker cog! Use `[p]help VoteTracker` to see all commands.",
+    "short": "Track and reward server votes",
+    "description": "A cog to track server votes and reward users with points and roles",
+    "tags": ["voting", "rewards"],
+    "min_bot_version": "3.5.0",
+    "min_python_version": [3, 8, 0],
+    "end_user_data_statement": "This cog stores user IDs, vote counts, and point totals for tracking voting rewards.",
+    "type": "COG",
+    "hidden": false,
+    "disabled": false
+}
