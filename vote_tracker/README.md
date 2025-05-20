@@ -6,7 +6,7 @@ A collection of cogs for Red-DiscordBot, created by the Lounge Discord server.
 
 - Website: [http://loungecove.com/](http://loungecove.com/)
 - Email: support@loungecove.com
-- Discord: [Join our server](https://discord.gg/lounge)
+- Discord: [Join our server](https://discord.gg/mTUduyJ2Kq)
 
 ## Cogs
 
@@ -33,7 +33,7 @@ To install these cogs, follow these steps:
 
 1. Add the repository:
 ```
-[p]repo add lounge-cogs https://github.com/your-repo-url
+[p]repo add lounge-cogs https://github.com/Lounge-Area/Cogs
 ```
 
 2. Install the desired cog:
