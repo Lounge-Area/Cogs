@@ -1,14 +1,10 @@
 {
     "author": ["Lounge"],
+    "install_msg": "Thanks for installing the VoteTracker cog! Use [p]help VoteTracker to see all commands.",
     "name": "VoteTracker",
-    "install_msg": "Thanks for installing the VoteTracker cog! Use `[p]help VoteTracker` to see all commands.",
-    "short": "Track and reward server votes",
-    "description": "A cog to track server votes and reward users with points and roles",
-    "tags": ["voting", "rewards"],
+    "short": "Track votes and manage giveaways with vote-based weighting",
+    "description": "Track server votes, reward users with points, and run weighted giveaways based on voting activity",
+    "tags": ["voting", "rewards", "giveaway", "utility"],
     "min_bot_version": "3.5.0",
-    "min_python_version": [3, 8, 0],
-    "end_user_data_statement": "This cog stores user IDs, vote counts, and point totals for tracking voting rewards.",
-    "type": "COG",
-    "hidden": false,
-    "disabled": false
+    "end_user_data_statement": "This cog stores Discord IDs and vote counts for users who participate in voting and giveaways."
 }
