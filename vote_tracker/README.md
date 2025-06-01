@@ -6,7 +6,7 @@ A collection of cogs for Red-DiscordBot, created by the Lounge Discord server.
 
 - Website: [http://loungecove.com/](http://loungecove.com/)
 - Email: support@loungecove.com
-- Discord: [Join our server](https://discord.gg/mTUduyJ2Kq)
+- Discord: [Join our server](https://discord.gg/loungecove)
 
 ## Cogs
 
