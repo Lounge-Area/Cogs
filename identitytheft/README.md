@@ -1,23 +1,14 @@
-# Lounge-Cogs
-
-A collection of cogs for Red-DiscordBot, created by the Lounge Discord server.
-
-## Support
-
-- Website: [http://loungecove.com/](http://loungecove.com/)
-- Email: support@loungecove.com
-- Discord: [Join our server](https://discord.gg/mTUduyJ2Kq)
-
 ## Cogs
 
 ### IdentityTheft
 
-Responds to 'I'm ...' messages with humorous identity theft responses. If a user correctly identifies themselves (by mention or text name), the bot says 'Hey Name!'. Otherwise, it triggers impersonation responses via webhooks.
+Responds to 'I'm ...' messages with humorous identity theft responses. If a user correctly identifies themselves (by mention or text name), the bot says 'Hey Name!'. Otherwise, it triggers impersonation responses via webhooks. Ignores phrases like 'I'm fine'.
 
 #### Features
 - Detects 'I'm ...' messages and verifies user identity by mention (e.g., 'I'm @Floo') or text name (e.g., 'I'm Floo')
 - Responds with 'Hey Name!' for correct self-identification
 - Uses webhooks for humorous impersonation responses when claiming to be someone else
+- Ignores common phrases like 'I'm fine'
 - Configurable cooldown and blacklist
 - Toggleable via commands
 
@@ -31,24 +22,17 @@ Responds to 'I'm ...' messages with humorous identity theft responses. If a user
 
 To install these cogs, follow these steps:
 
-
-
-
-
-Add the repository:
+1. Add the repository:
 ```
 [p]repo add lounge-cogs https://github.com/Lounge-Area/Cogs
 ```
 
-Install the desired cog:
+2. Install the desired cog:
 ```
 [p]cog install lounge-cogs identitytheft
 ```
 
-
-
-
-Load the cog:
+3. Load the cog:
 ```
 [p]load IdentityTheft
 ```

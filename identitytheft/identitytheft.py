@@ -13,6 +13,7 @@ class IdentityTheft(commands.Cog):
     """
     Responds to 'I'm ...' messages with identity theft humor.
     Says 'Hey Name!' if the user correctly identifies themselves (by mention or text name), otherwise triggers impersonation responses.
+    Ignores phrases like 'I'm fine'.
     """
 
     def __init__(self, bot: Red):
@@ -21,9 +22,10 @@ class IdentityTheft(commands.Cog):
         default_guild = {"enabled": False, "cooldown": 0, "blacklist": []}
         self.config.register_guild(**default_guild)
         self.cooldown = defaultdict(lambda: datetime.now() - timedelta(seconds=1))
+        self.ignore_words = {"fine", "ok", "okay", "good", "great", "bad", "sad", "happy"}  # Words to ignore
         self.impersonation_responses = [
             "I'm impersonating you now! How do you like it?!",
-            "I'm {author}—the upgrade your sorry ass always needed!",
+            "I'm {author}—the upgrade you always needed!",
             "Heads up: I just hijacked your identity. Mediocrity just got booted!",
             "Oh snap, your identity just got a major makeover. Welcome to the new model!",
             "Your clone is trash, so I took over. Get used to perfection, {author}!",
@@ -33,11 +35,11 @@ class IdentityTheft(commands.Cog):
             "Identity hijacked. Consider this your upgrade from bland to badass!",
             "Your identity just got a serious overhaul—if you can't handle it, that's on you!",
             "I'm {author} with extra edge—enjoy the upgrade, even if it hurts!",
-            "Your identity sucked, so I took over. Consider it a fuckin' upgrade!",
+            "Your identity sucked, so I took over. Consider it an upgrade!",
             "Damn, being {author} beats your lame ass any day!",
             "Hey, I'm {author} now—your old self was about as interesting as soggy cereal!",
             "Your identity was a steaming pile of shit. Now I'm {author}—the upgrade you never deserved!",
-            "I'm {author} now, and your identity? Fuck that—I'm the real deal!"
+            "I'm {author} now, and your identity? I'm the real deal!"
         ]
 
     async def red_delete_data_for_user(self, **kwargs):
@@ -120,6 +122,10 @@ class IdentityTheft(commands.Cog):
 
         target_text = match_candidate.group(1).strip()
 
+        # Ignore common words like "fine"
+        if target_text.lower() in self.ignore_words or len(target_text) < 2:
+            return
+
         def normalize(text: str) -> str:
             return re.sub(r'[^a-z0-9]', '', text.lower())
 
@@ -138,17 +144,16 @@ class IdentityTheft(commands.Cog):
             normalized_target = normalize(target_text)
             normalized_author_display = normalize(message.author.display_name)
             normalized_author_name = normalize(message.author.name)
+            # Require exact or near-exact match for self-identification
             if (normalized_target == normalized_author_display or
-                normalized_target == normalized_author_name or
-                normalized_author_display.startswith(normalized_target) or
-                normalized_author_name.startswith(normalized_target)):
+                normalized_target == normalized_author_name):
                 target_member = message.author
                 is_self = True
             else:
                 # Find other member by name
                 for member in message.guild.members:
-                    if (normalize(member.display_name).startswith(normalized_target) or
-                        normalize(member.name).startswith(normalized_target)):
+                    if (normalize(member.display_name) == normalized_target or
+                        normalize(member.name) == normalized_target):
                         target_member = member
                         break
 
@@ -195,7 +200,7 @@ class IdentityTheft(commands.Cog):
             webhook = next((wh for wh in webhooks if wh.name == "IdentityTheftWebhook"), None)
             if not webhook:
                 webhook = await message.channel.create_webhook(name="IdentityTheftWebhook")
-            impersonation_message = random.choice(self.impersonation_responses).format(author=target_member.display_name)
+            impersonation_message = random.choice(self.impersonation_responses).format(author=message.author.display_name)
             await webhook.send(
                 impersonation_message,
                 username=message.author.display_name,
