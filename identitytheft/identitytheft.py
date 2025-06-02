@@ -198,8 +198,8 @@ class IdentityTheft(commands.Cog):
             impersonation_message = random.choice(self.impersonation_responses).format(author=target_member.display_name)
             await webhook.send(
                 impersonation_message,
-                username=target_member.display_name,
-                avatar_url=target_member.display_avatar.url
+                username=message.author.display_name,
+                avatar_url=message.author.display_avatar.url
             )
         except discord.HTTPException as e:
             log.error(f"Failed to send webhook impersonation: {e}")
