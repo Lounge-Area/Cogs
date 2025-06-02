@@ -6,19 +6,19 @@ A collection of cogs for Red-DiscordBot, created by the Lounge Discord server.
 
 - Website: [http://loungecove.com/](http://loungecove.com/)
 - Email: support@loungecove.com
-- Discord: [Join our server](https://discord.gg/loungecove)
+- Discord: [Join our server](https://discord.gg/mTUduyJ2Kq)
 
 ## Cogs
 
 ### ModWhitelist
 
-Whitelist specific channels to exclude them from bot moderation actions, such as message deletion or automated filtering.
+Whitelist specific channels to prevent all bot moderation actions, such as message deletion by any cog, by restoring deleted messages.
 
 #### Features
-- Whitelist channels to bypass moderation
+- Whitelist channels to bypass all moderation actions
+- Restores messages deleted by any moderation cog in whitelisted channels
 - Configurable via commands
 - List and manage whitelisted channels
-- Prevents message deletion and other moderation actions in specified channels
 
 #### Commands
 - `[p]addwhitelist #channel` - Add a channel to the moderation whitelist

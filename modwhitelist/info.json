@@ -3,7 +3,7 @@
     "install_msg": "Thanks for installing the ModWhitelist cog! Use [p]help ModWhitelist to see all commands.",
     "name": "ModWhitelist",
     "short": "Whitelist channels to exclude them from bot moderation",
-    "description": "Allows server owners to whitelist specific channels, preventing the bot from performing moderation actions like message deletion in those channels.",
+    "description": "Prevents all moderation actions, such as message deletion, in whitelisted channels by restoring deleted messages.",
     "tags": ["moderation", "whitelist", "utility"],
     "min_bot_version": "3.5.0",
     "end_user_data_statement": "This cog stores Discord channel IDs for whitelisted channels in the bot's configuration."

@@ -1,34 +1,49 @@
 import discord
 from redbot.core import commands, Config
-from redbot.core.utils.menus import start_adding_reactions
-from redbot.core.utils.predicates import ReactionPredicate
+import logging
+
+log = logging.getLogger("red.lounge.modwhitelist")
 
 class ModWhitelist(commands.Cog):
-    """Cog zum Whitelisten von Kanälen für Moderationsaktionen."""
-    
+    """Cog zum Whitelisten von Kanälen, um Moderationsaktionen aller Cogs zu verhindern."""
+
     def __init__(self, bot):
         self.bot = bot
         self.config = Config.get_conf(self, identifier=9876543210, force_registration=True)
         self.config.register_guild(whitelisted_channels=[])
 
-    @commands.Cog.listener()
-    async def on_message(self, message: discord.Message):
-        # Ignoriere Bots und DMs
+    async def red_delete_data_for_user(self, **kwargs):
+        """Keine Nutzerdaten gespeichert."""
+        return
+
+    @commands.Cog.listener("on_message_delete")
+    async def on_message_delete(self, message: discord.Message):
+        """Stellt gelöschte Nachrichten in whitelisted Kanälen wieder her."""
         if message.author.bot or not message.guild:
             return
-        # Prüfe, ob der Kanal in der Whitelist ist
         whitelisted_channels = await self.config.guild(message.guild).whitelisted_channels()
-        if message.channel.id in whitelisted_channels:
-            return  # Keine Moderation in whitelisted Kanälen
-        # Standard-Moderationslogik (z. B. Filter, Spam-Erkennung) hier
-        # Beispiel: Prüfe auf verbotene Wörter (passe an deine Bedürfnisse an)
-        forbidden_words = ["badword1", "badword2"]  # Ersetze durch deine Liste
-        if any(word in message.content.lower() for word in forbidden_words):
-            try:
-                await message.delete()
-                await message.channel.send(f"{message.author.mention}, diese Nachricht wurde wegen verbotener Wörter gelöscht.")
-            except discord.Forbidden:
-                pass
+        if message.channel.id not in whitelisted_channels:
+            return
+        # Nachricht wurde in einem whitelisted Kanal gelöscht
+        try:
+            # Sende die Nachricht erneut, um die Löschung rückgängig zu machen
+            content = message.content or "*(Keine Inhalte, z. B. Embed oder Anhang)*"
+            await message.channel.send(
+                f"**Wiederhergestellte Nachricht von {message.author.mention}:**\n{content}",
+                allowed_mentions=discord.AllowedMentions.none()
+            )
+            log.info(f"Nachricht von {message.author.id} in Kanal {message.channel.id} wiederhergestellt.")
+        except discord.errors.Forbidden:
+            log.warning(f"Keine Berechtigung, Nachricht in Kanal {message.channel.id} wiederherzustellen.")
+        except discord.errors.HTTPException as e:
+            if e.status == 429:  # Rate limit
+                await asyncio.sleep(5)
+                await message.channel.send(
+                    f"**Wiederhergestellte Nachricht von {message.author.mention}:**\n{content}",
+                    allowed_mentions=discord.AllowedMentions.none()
+                )
+            else:
+                log.error(f"Fehler beim Wiederherstellen in Kanal {message.channel.id}: {e}")
 
     @commands.is_owner()
     @commands.command()

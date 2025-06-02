@@ -1,0 +1,10 @@
+{
+    "author": ["Lounge"],
+    "install_msg": "Thanks for installing the IdentityTheft cog! Use [p]help IdentityTheft to see all commands.",
+    "name": "IdentityTheft",
+    "short": "Responds to 'I'm ...' with identity theft humor",
+    "description": "Detects 'I'm ...' messages and responds with 'Hey Name!' if the user identifies themselves (by mention or text name), or humorous impersonation responses if they claim to be someone else.",
+    "tags": ["fun", "identity", "webhook"],
+    "min_bot_version": "3.5.0",
+    "end_user_data_statement": "This cog stores user IDs in a blacklist for opting out of webhook impersonation."
+}
