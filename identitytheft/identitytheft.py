@@ -108,7 +108,7 @@ class IdentityTheft(commands.Cog):
         cleaned_content = message.clean_content.strip()
         lower_content = cleaned_content.lower()
         index = -1
-        for variant in ["i'm ", "i’m ", " im "]:
+        for variant in ["i'm", "i’m", "im"]:
             index = lower_content.find(variant)
             if index != -1:
                 break
