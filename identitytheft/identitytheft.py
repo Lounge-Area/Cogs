@@ -3,9 +3,16 @@ import random
 from collections import defaultdict
 from datetime import datetime, timedelta
 import discord
+import discord.http
 from redbot.core import Config, checks, commands
 from redbot.core.bot import Red
+from redbot.core.commands import Cog
 import logging
+
+async def fetch_url(session, url):
+    async with session.get(url) as response:
+        assert response.status == 200
+        return await response.json()
 
 log = logging.getLogger("red.lounge.identitytheft")
 
@@ -17,11 +24,12 @@ class IdentityTheft(commands.Cog):
     """
 
     def __init__(self, bot: Red):
+        super().__init__()
         self.bot = bot
         self.config = Config.get_conf(self, identifier=684457913250480143, force_registration=True)
         default_guild = {"enabled": False, "cooldown": 0, "blacklist": []}
         self.config.register_guild(**default_guild)
-        self.cooldown = defaultdict(lambda: datetime.now() - timedelta(seconds=1))
+        self.cooldown = defaultdict(datetime.now)
         self.ignore_words = {"fine", "ok", "okay", "good", "great", "bad", "sad", "happy"}
         self.impersonation_responses = [
             "I'm impersonating you now! How do you like it?!",
@@ -213,5 +221,9 @@ class IdentityTheft(commands.Cog):
                 avatar_url=message.author.display_avatar.url,
                 allowed_mentions=discord.AllowedMentions.none()
             )
+
+        except Exception:
+            pass
+
         except discord.HTTPException as e:
             log.error(f"Failed to send webhook impersonation in channel {message.channel.id}: {e}")
