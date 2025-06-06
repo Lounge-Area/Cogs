@@ -688,9 +688,9 @@ class Giveaways(commands.Cog):
         if arguments.get("created"):
             settings.append(f"Account Age: {arguments['created']} days")
         if arguments.get("multiplier") and arguments.get("multi_roles"):
-            multi_roles = set(ctx.guild.get_role(r)) 
-            for r in arguments["roles"]
-                settings.append(
-                    f"Multiplier: {arguments['multiplier']}x for {', '.join(r.mention for r in multi_roles if r)}"
-                )
+            multi_roles = {ctx.guild.get_role(r) for r in arguments["multi_roles"] if ctx.guild.get_role(r) is not None}
+        if multi_roles:
+            settings.append(
+                f"Multiplier: {arguments['multiplier']}x for {', '.join(r.mention() for r in multi_roles)}"
+            )
         return "\n".join(settings)
