@@ -26,7 +26,7 @@ GIVEAWAY_KEY = "giveaways"
 class Giveaways(commands.Cog):
     """Giveaway Commands"""
 
-    __version__ = "1.3.4"
+    __version__ = "1.3.5"
     __author__ = "flare"
 
     def format_help_for_context(self, ctx):
@@ -137,26 +137,26 @@ class Giveaways(commands.Cog):
                 gw = await self.config.custom(GIVEAWAY_KEY, giveaway.guildid, str(msgid)).all()
                 gw["ended"] = True
                 await self.config.custom(GIVEAWAY_KEY, giveaway.guildid, str(msgid)).set(gw)
-        for msgid in to_clear:
-            if msgid in self.giveaways:  # Check to avoid KeyError
-                del self.giveaways[msgid]
+        for message_id in to_clear:
+            if message_id in self.giveaways:  # Check to avoid KeyError
+                del self.giveaways[message_id]
         await self.cleanup_ended_giveaways()
 
     async def cleanup_ended_giveaways(self):
-        """Remove ended giveaways from SQLite and Config."""
+        """Remove expired giveaways from SQLite and Config."""
         async with DB.transaction():
             data = await self.config.custom(GIVEAWAY_KEY).all()
-            ended_msgids = [
+            expired_ids = [
                 int(msgid)
                 for guild_id, giveaways in data.items()
                 for msgid, gw in giveaways.items()
                 if gw.get("ended", False)
             ]
-            if ended_msgids:
-                await GiveawayEntry.delete().where(GiveawayEntry.message_id.in_(ended_msgids)).run()
+            if expired_ids:
+                await GiveawayEntry.delete().where(GiveawayEntry.message_id.in_(expired_ids)).run()
             for guild_id in data:
-                for msgid in ended_msgids:
-                    if str(msgid) in data[guild_id]:
+                for msgid in expired_ids:
+                    if str(msgid) in data[str(guild_id)]:
                         await self.config.custom(GIVEAWAY_KEY, guild_id, str(msgid)).clear()
 
     async def draw_winner(self, giveaway: Giveaway):
@@ -206,9 +206,7 @@ class Giveaways(commands.Cog):
                 GIVEAWAY_KEY, giveaway.guildid, str(giveaway.messageid)
             ).all()
             gw["ended"] = True
-            await self.config.custom(GIVEAWAY_KEY, giveaway.guildid, str(giveaway.messageid)).set(
-                gw
-            )
+            await self.config.custom(GIVEAWAY_KEY, giveaway.guildid, str(giveaway.messageid)).set(gw)
             return
 
         if giveaway.kwargs.get("announce"):
@@ -233,7 +231,7 @@ class Giveaways(commands.Cog):
                 for winner in winner_objs:
                     with contextlib.suppress(discord.Forbidden):
                         await winner.send(
-                            f"Congratulations! You won {giveaway.prize} in the giveaway on {guild}"
+                            f"Congratulations! You won {giveaway.prize} in the giveaway on {guild}!"
                         )
         if giveaway.messageid in self.giveaways:
             log.debug(f"Removing giveaway {giveaway.messageid} from self.giveaways")
@@ -257,7 +255,7 @@ class Giveaways(commands.Cog):
     @commands.has_permissions(manage_guild=True)
     @app_commands.describe(
         channel="The channel in which to start the giveaway.",
-        time="The time the giveaway should last time.",
+        time="The time the giveaway should last.",
         prize="The prize for the giveaway.",
     )
     async def start(
@@ -265,13 +263,13 @@ class Giveaways(commands.Cog):
         ctx: commands.Context,
         channel: Optional[discord.TextChannel],
         time: TimedeltaConverter(default_unit="minutes"),
-        *, 
+        *,
         prize: str,
     ):
         """
         Start a giveaway.
 
-        This by default will be DM winner and also DM a user if they cannot enter the giveaway.
+        This by default will DM the winner and also DM a user if they cannot enter the giveaway.
         """
         channel = channel or ctx.channel
         end = datetime.now(timezone.utc) + time
@@ -384,7 +382,7 @@ class Giveaways(commands.Cog):
             emoji = self.bot.get_emoji(emoji)
         hosted_by = ctx.guild.get_member(arguments.get("hosted-by", ctx.author.id)) or ctx.author
         embed = discord.Embed(
-            title=f"{f'{winners}x ' if winners_count > 1 else ''}{prize}",
+            title=f"{f'{winners}x ' if winners > 1 else ''}{prize}",
             description=f"{description}\n\nClick the button below to enter\n\n**Hosted by:** {hosted_by.mention}\n\nEnds: <t:{int(end.timestamp())}:R>",
             color=arguments.get("colour", await ctx.embed_color()),
         )
@@ -495,7 +493,7 @@ class Giveaways(commands.Cog):
             if giveaway.kwargs[kwarg]:
                 msg += f"**{kwarg.title()}:** {giveaway.kwargs[kwarg]}\n"
         embed = discord.Embed(
-            title=f"{f'{winners}x ' if winners_count > 1 else ''}{giveaway.prize}",
+            title=f"{f'{winners}x ' if winners > 1 else ''}{giveaway.prize}",
             color=await ctx.embed_color(),
             description=msg,
         )
@@ -634,3 +632,25 @@ class Giveaways(commands.Cog):
         )
         await message.edit(embed=new_embed)
         await ctx.tick()
+
+    def generate_settings_text(self, ctx: commands.Context, arguments: Args) -> str:
+        """Generate text describing giveaway requirements."""
+        settings = []
+        if arguments.get("roles"):
+            roles = [ctx.guild.get_role(r) for r in arguments["roles"]]
+            settings.append(f"Required Roles: {', '.join(r.mention for r in roles if r)}")
+        if arguments.get("blacklist"):
+            blacklist = [ctx.guild.get_role(r) for r in arguments["blacklist"]]
+            settings.append(f"Blacklisted Roles: {', '.join(r.mention for r in blacklist if r)}")
+        if arguments.get("cost"):
+            settings.append(f"Cost: {arguments['cost']} credits")
+        if arguments.get("joined"):
+            settings.append(f"Joined Server: {arguments['joined']} days ago")
+        if arguments.get("created"):
+            settings.append(f"Account Age: {arguments['created']} days")
+        if arguments.get("multiplier") and arguments.get("multi_roles"):
+            multi_roles = [ctx.guild.get_role(r) for r in arguments["multi_roles"]]
+            settings.append(
+                f"Multiplier: {arguments['multiplier']}x for {', '.join(r.mention for r in multi_roles if r)}"
+            )
+        return "\n".join(settings)
