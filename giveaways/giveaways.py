@@ -236,7 +236,7 @@ class Giveaways(commands.Cog):
                             f"Congratulations! You won {giveaway.prize} in the giveaway on {guild}"
                         )
         if giveaway.messageid in self.giveaways:
-            log.debug(f"Removing giveaway {giveaway.messageid}} from self.giveaways")
+            log.debug(f"Removing giveaway {giveaway.messageid} from self.giveaways")
             del self.giveaways[giveaway.messageid]
         gw = await self.config.custom(
             GIVEAWAY_KEY, giveaway.guildid, str(giveaway.messageid)
