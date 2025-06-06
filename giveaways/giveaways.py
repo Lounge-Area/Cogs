@@ -9,6 +9,7 @@ from asyncio import Lock
 import aiohttp
 import discord
 from piccolo.apps.migrations.auto.migration_manager import MigrationManager
+from piccolo.columns import BigInt
 from redbot.core import Config, app_commands, commands
 from redbot.core.commands.converter import TimedeltaConverter
 from redbot.core.utils.chat_formatting import pagify
@@ -25,7 +26,7 @@ GIVEAWAY_KEY = "giveaways"
 class Giveaways(commands.Cog):
     """Giveaway Commands"""
 
-    __version__ = "1.3.3"
+    __version__ = "1.3.4"
     __author__ = "flare"
 
     def format_help_for_context(self, ctx):
@@ -94,6 +95,8 @@ class Giveaways(commands.Cog):
                     self.bot.add_view(view)
                 except Exception as exc:
                     log.error(f"Error loading giveaway {msgid}: ", exc_info=exc)
+                    # Skip corrupted entries
+                    continue
         while True:
             try:
                 await self.check_giveaways()
@@ -135,8 +138,8 @@ class Giveaways(commands.Cog):
                 gw["ended"] = True
                 await self.config.custom(GIVEAWAY_KEY, giveaway.guildid, str(msgid)).set(gw)
         for msgid in to_clear:
-            del self.giveaways[msgid]
-        # Clean up ended giveaways
+            if msgid in self.giveaways:  # Check to avoid KeyError
+                del self.giveaways[msgid]
         await self.cleanup_ended_giveaways()
 
     async def cleanup_ended_giveaways(self):
@@ -149,7 +152,8 @@ class Giveaways(commands.Cog):
                 for msgid, gw in giveaways.items()
                 if gw.get("ended", False)
             ]
-            await GiveawayEntry.delete().where(GiveawayEntry.message_id.in_(ended_msgids))
+            if ended_msgids:
+                await GiveawayEntry.delete().where(GiveawayEntry.message_id.in_(ended_msgids)).run()
             for guild_id in data:
                 for msgid in ended_msgids:
                     if str(msgid) in data[guild_id]:
@@ -229,10 +233,10 @@ class Giveaways(commands.Cog):
                 for winner in winner_objs:
                     with contextlib.suppress(discord.Forbidden):
                         await winner.send(
-                            f"Congratulations! You won {giveaway.prize} in the giveaway on {guild}!"
+                            f"Congratulations! You won {giveaway.prize} in the giveaway on {guild}"
                         )
         if giveaway.messageid in self.giveaways:
-            log.debug(f"Removing giveaway {giveaway.messageid} from self.giveaways")
+            log.debug(f"Removing giveaway {giveaway.messageid}} from self.giveaways")
             del self.giveaways[giveaway.messageid]
         gw = await self.config.custom(
             GIVEAWAY_KEY, giveaway.guildid, str(giveaway.messageid)
@@ -253,7 +257,7 @@ class Giveaways(commands.Cog):
     @commands.has_permissions(manage_guild=True)
     @app_commands.describe(
         channel="The channel in which to start the giveaway.",
-        time="The time the giveaway should last.",
+        time="The time the giveaway should last time.",
         prize="The prize for the giveaway.",
     )
     async def start(
@@ -267,7 +271,7 @@ class Giveaways(commands.Cog):
         """
         Start a giveaway.
 
-        This by default will DM the winner and also DM a user if they cannot enter the giveaway.
+        This by default will be DM winner and also DM a user if they cannot enter the giveaway.
         """
         channel = channel or ctx.channel
         end = datetime.now(timezone.utc) + time
@@ -380,7 +384,7 @@ class Giveaways(commands.Cog):
             emoji = self.bot.get_emoji(emoji)
         hosted_by = ctx.guild.get_member(arguments.get("hosted-by", ctx.author.id)) or ctx.author
         embed = discord.Embed(
-            title=f"{f'{winners}x ' if winners > 1 else ''}{prize}",
+            title=f"{f'{winners}x ' if winners_count > 1 else ''}{prize}",
             description=f"{description}\n\nClick the button below to enter\n\n**Hosted by:** {hosted_by.mention}\n\nEnds: <t:{int(end.timestamp())}:R>",
             color=arguments.get("colour", await ctx.embed_color()),
         )
@@ -491,7 +495,7 @@ class Giveaways(commands.Cog):
             if giveaway.kwargs[kwarg]:
                 msg += f"**{kwarg.title()}:** {giveaway.kwargs[kwarg]}\n"
         embed = discord.Embed(
-            title=f"{f'{winners}x ' if winners > 1 else ''}{giveaway.prize}",
+            title=f"{f'{winners}x ' if winners_count > 1 else ''}{giveaway.prize}",
             color=await ctx.embed_color(),
             description=msg,
         )
@@ -630,76 +634,3 @@ class Giveaways(commands.Cog):
         )
         await message.edit(embed=new_embed)
         await ctx.tick()
-
-    @giveaway.command()
-    @commands.has_permissions(manage_guild=True)
-    async def integrations(self, ctx: commands.Context):
-        """Various 3rd party integrations for giveaways."""
-
-        msg = """
-        3rd party integrations for giveaways.
-
-        You can use these integrations to integrate giveaways with other 3rd party services.
-
-        `--level-req`: Integrate with the Red Level system Must be Fixator's leveler.
-        `--rep-req`: Integrate with the Red Level Rep system Must be Fixator's leveler.
-        `--tatsu-level`: Integrate with the Tatsumaki's levelling system, must have a valid Tatsumaki API key set.
-        `--tatsu-rep`: Integrate with the Tatsumaki's rep system, must have a valid Tatsumaki API key set.
-        `--mee6-level`: Integrate with the MEE6 levelling system.
-        `--amari-level`: Integrate with the Amari's levelling system.
-        `--amari-weekly-xp`: Integrate with the Amari's weekly xp system.""".format(
-            prefix=ctx.clean_prefix
-        )
-        if await self.bot.is_owner(ctx.author):
-            msg += """
-                **API Keys**
-                Tatsu's API key can be set with the following command (You must find where this key is yourself): `{prefix}set api tatsumaki authorization <key>`
-                Amari's API key can be set with the following command (Apply [here](https://docs.google.com/forms/d/e/1FAIpQLScQDCsIqaTb1QR9BfzbeohlUJYA3Etwr-iSb0CRKbgjA-fq7Q/viewform)): `{prefix}set api amari authorization <key>`
-
-                For any integration suggestions, suggest them via the [#support-flare-cogs](https://discord.gg/GET4DVk) channel on the support server or [flare-cogs](https://github.com/flaree/flare-cogs/issues/new/choose) github.""".format(
-                prefix=ctx.clean_prefix
-            )
-
-        embed = discord.Embed(
-            title="3rd Party Integrations", description=msg, color=await ctx.embed_color()
-        )
-        await ctx.send(embed=embed)
-
-    def generate_settings_text(self, ctx: commands.Context, args):
-        msg = ""
-        if args.get("roles"):
-            msg += (
-                f"**Roles:** {', '.join([ctx.guild.get_role(x).mention for x in args['roles']])}\n"
-            )
-        if args.get("multi"):
-            msg += f"**Multiplier:** {args['multi']}\n"
-        if args.get("multi-roles"):
-            msg += f"**Multiplier Roles:** {', '.join([ctx.guild.get_role(x).mention for x in args['multi-roles']])}\n"
-        if args.get("cost"):
-            msg += f"**Cost:** {args.get('cost')}\n"
-        if args.get("joined"):
-            msg += f"**Joined:** {args['joined']} days\n"
-        if args.get("created"):
-            msg += f"**Created:** {args.get('created')} days\n"
-        if args.get("blacklist"):
-            msg += f"**Blacklist:** {', '.join([ctx.guild.get_role(x).mention for x in args['blacklist']])} "
-        if args.get("winners"):
-            msg += f"**Winners:** {args.get('winners')} "
-        if args.get("mee6_level"):
-            msg += f"**MEE6 Level:** {args.get('mee6_level')} "
-        if args.get("amari_level"):
-            msg += f"**Amari Level:** {args.get('amari_level')} "
-        if args.get("amari_weekly_xp"):
-            msg += f"**Amari Weekly XP:** {args.get('amari_weekly_xp')} "
-        if args.get("tatsu_level"):
-            msg += f"**Tatsu Level:** {args.get('tatsu_level')} "
-        if args.get("tatsu_rep"):
-            msg += f"**Tatsu Level:** {args.get('tatsu_rep')} "
-        if args.get("level_req"):
-            msg += f"**Level Requirement:** {args.get('level_req')} "
-        if args.get("rep_req"):
-            msg += f"**Rep Requirement:** {args.get('rep_req')} "
-        if args.get("bypass-roles"):
-            msg += f"**Bypass Roles:** {', '.join([ctx.guild.get_role(x).mention for x in args.get('bypass_roles')])} ({args.get('bypass_type', 'or')}) "
-
-        return msg
