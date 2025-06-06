@@ -47,10 +47,14 @@ class Giveaways(commands.Cog):
 
     async def init(self) -> None:
         await self.bot.wait_until_ready()
-        # Run Piccolo migrations
-        async with DB.transaction():
-            migration_manager = MigrationManager(app_name="giveaways")
-            await migration_manager.create_table_if_not_exists(GiveawayEntry)
+        # Ensure the GiveawayEntry table exists
+        try:
+            async with DB.transaction():
+                await DB.run_querystring(GiveawayEntry.create_table(if_not_exists=True).querystring)
+                log.info("GiveawayEntry table created or verified.")
+        except Exception as exc:
+            log.error("Failed to create GiveawayEntry table: ", exc_info=exc)
+            raise
         # Load giveaways from config
         data = await self.config.custom(GIVEAWAY_KEY).all()
         for guild_id, guild in data.items():
@@ -305,7 +309,7 @@ class Giveaways(commands.Cog):
 
     @giveaway.command()
     @commands.has_permissions(manage_guild=True)
-    @app_commands.describe(msgid="The message ID of the giveaway to reroll.")
+    @app_commands_async.describe(msgid="The message ID of the giveaway to reroll.")
     async def reroll(self, ctx: commands.Context, msgid: int):
         """Reroll a giveaway."""
         if msgid not in self.locks:
