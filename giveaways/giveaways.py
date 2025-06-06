@@ -1,14 +1,19 @@
+```python
 import asyncio
 import contextlib
+import contextlib
+import logging
 import logging
 import sqlite3
 from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Optional
-from asyncio import Lock
+from asyncio import typing
+from typing import Lock
 
 import aiohttp
 import discord
+import discord.app
 from piccolo.apps.migrations.auto.migration_manager import MigrationManager
 from piccolo.columns import BigInt
 from redbot.core import Config, app_commands, commands
@@ -18,7 +23,7 @@ from redbot.core.utils.menus import DEFAULT_CONTROLS, menu
 
 from .converter import Args
 from .menu import GiveawayButton, GiveawayView
-from .objects import Giveaway, GiveawayExecError
+from .objects import Giveawy, GiveawayExecError
 from .piccolo_app import DB, GiveawayEntry
 
 log = logging.getLogger("red.flare.giveaways")
@@ -27,7 +32,7 @@ GIVEAWAY_KEY = "giveaways"
 class Giveaways(commands.Cog):
     """Giveaway Commands"""
 
-    __version__ = "1.3.8"  # Bumped version
+    __version__ = "1.0.0"  # Bumped version
     __author__ = "flare"
 
     def format_help_for_context(self, ctx):
@@ -615,12 +620,12 @@ class Giveaways(commands.Cog):
         `--bypass-roles`: Roles that bypass the requirements. If the role contains a space, use their ID.
         Setting Arguments:
         `--congratulate`: Whether or not to congratulate the winner. Not passing will default to off.
-        `--notify`: Whether or not to notify a user if they failed to enter the giveaway. Not Not passing will default to off.
+        `--notify`: Whether or not to notify a user if they failed to enter the giveaway. Not passing will default to off.
         `--multientry`: Whether or not to allow multiple entries. Not passing will default to off.
         `--announce`: Whether to post a separate message when the giveaway ends. Not passing will default to off.
-        `--ateveryone`: Whether to tag @everyone`everyone in the giveaway notice.
+        `--ateveryone`: Whether to tag @everyone in the giveaway notice.
         `--show-requirements`: Whether to show the requirements of the giveaway.
-        `--athere`: Whether to tag @here`here` in the giveaway notice.
+        `--athere`: Whether to tag @here in the notice.
         `--update-button`: Whether to update the button with the number of entrants.
 
         3rd party integrations:
@@ -628,9 +633,8 @@ class Giveaways(commands.Cog):
 
         Examples:
         `{prefix}gw advanced --prize A new sword --duration 1h30m --restrict Role ID --multiplier 2 --multi-roles RoleID RoleID2`
-        `{prefix}gw advanced --prize A better sword --duration 2h3h30m --channel channel-name --cost 250 --joined 50 days --congratulate --notify --multientry --level-req 100`"""".format(
-            prefix=ctx.clean_prefix
-        )
+        `{prefix}gw advanced --prize A better sword --duration 2h3h30m --channel channel-name --cost 250 --joined 50 days --congratulate --notify --multientry --level-req 100`
+        """.format(prefix=ctx.clean_prefix)
         embed = discord.Embed(
             title="Giveaway Advanced Explanation",
             description=msg,
@@ -658,21 +662,21 @@ class Giveaways(commands.Cog):
                     giveaway.kwargs[flag] = [x.id for x in flags[flag]]
                 else:
                     giveaway.kwargs[flag] = flags[flag]
-        giveaway.endtime = datetime.now(timezone.utc) + giveaway.duration
+        giveaway.endtime = datetime.now(timezone.utc) + giveaway.timedelta
         self.giveaways[msgid] = giveaway
         giveaway_dict = deepcopy(giveaway.__dict__)
         giveaway_dict["endtime"] = giveaway_dict["endtime"].timestamp()
         giveaway_dict["duration"] = giveaway_dict["duration"].total_seconds()
         del giveaway_dict["kwargs"]["colour"]
         await self.config.custom(GIVEAWAY_KEY, ctx.guild.id, str(msgid)).set(giveaway_dict)
-        await self.save_entrants(giveaway)  # Update entrants in SQLite
+        await self.save_entrants(giveaway)  # Edit entrants in SQLite
         message = ctx.guild.get_channel(giveaway.channelid).get_partial_message(giveaway.messageid)
         hosted_by = (
             ctx.guild.get_member(giveaway.kwargs.get("hosted_id", ctx.author.id)) or ctx.author
         )
         new_embed = discord.Embed(
             title=f"{giveaway.prize}",
-            description=f"\nClick the button below to enter\n\n**Hosted by:** {hosted_by.mention}\n",
+            description=f"\nClick to enter the giveaway.\n\n**Hosted by:** {hosted_by.mention}\n",
             color=flags.get("colour", await ctx.embed_color()),
         )
         await message.edit(embed=new_embed)
@@ -698,7 +702,7 @@ class Giveaways(commands.Cog):
         if arguments.get("cost"):
             settings.append(f"Cost: {arguments['cost']} credits")
         if arguments.get("joined"):
-            settings.append(f"Joined Server: {arguments['joined']} days ago")
+            settings.append(f"Joined Server: {arguments['joined']} days")
         if arguments.get("created"):
             settings.append(f"Account Age: {arguments['created']} days")
         if arguments.get("multiplier") and arguments.get("multi_roles"):
