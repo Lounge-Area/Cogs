@@ -1,18 +1,14 @@
 import logging
-
 import discord
 from discord.ui import Button, View
-
 from .objects import AlreadyEnteredError, GiveawayEnterError, GiveawayExecError
 
 log = logging.getLogger("red.flare.giveaways")
-
 
 class GiveawayView(View):
     def __init__(self, cog):
         super().__init__(timeout=None)
         self.cog = cog
-
 
 BUTTON_STYLE = {
     "blurple": discord.ButtonStyle.primary,
@@ -22,20 +18,9 @@ BUTTON_STYLE = {
     "gray": discord.ButtonStyle.secondary,
 }
 
-
 class GiveawayButton(Button):
-    def __init__(
-        self,
-        label: str,
-        style: str,
-        emoji,
-        cog,
-        id,
-        update=False,
-    ):
-        super().__init__(
-            label=label, style=BUTTON_STYLE[style], emoji=emoji, custom_id=f"giveaway_button:{id}"
-        )
+    def __init__(self, label: str, style: str, emoji, cog, id, update=False):
+        super().__init__(label=label, style=BUTTON_STYLE[style], emoji=emoji, custom_id=f"giveaway_button:{id}")
         self.default_label = label
         self.update = update
         self.cog = cog
@@ -45,15 +30,9 @@ class GiveawayButton(Button):
             giveaway = self.cog.giveaways[interaction.message.id]
             await interaction.response.defer()
             try:
-                await giveaway.add_entrant(
-                    interaction.user, bot=self.cog.bot, session=self.cog.session
-                )
-                # Save entrants to SQLite after adding
+                await giveaway.add_entrant(interaction.user, bot=self.cog.bot, session=self.cog.session)
                 await self.cog.save_entrants(giveaway)
-                await interaction.followup.send(
-                    f"You have been entered into the giveaway for {giveaway.prize}.",
-                    ephemeral=True,
-                )
+                await interaction.followup.send(f"You have been entered into the giveaway for {giveaway.prize}.", ephemeral=True)
             except GiveawayEnterError as e:
                 await interaction.followup.send(e.message, ephemeral=True)
                 return
@@ -61,14 +40,10 @@ class GiveawayButton(Button):
                 log.exception("Error while adding user to giveaway", exc_info=e)
                 return
             except AlreadyEnteredError:
-                # Remove user from entrants if already entered
                 if interaction.user.id in giveaway.entrants:
                     giveaway.entrants.remove(interaction.user.id)
-                    # Save updated entrants to SQLite
                     await self.cog.save_entrants(giveaway)
-                await interaction.followup.send(
-                    "You have been removed from the giveaway.", ephemeral=True
-                )
+                await interaction.followup.send("You have been removed from the giveaway.", ephemeral=True)
             await self.update_label(giveaway, interaction)
         else:
             await interaction.followup.send("This giveaway is no longer active.", ephemeral=True)
