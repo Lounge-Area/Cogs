@@ -128,9 +128,9 @@ class IdentityTheft(commands.Cog):
         if not match_candidate:
             return
 
-        target_text = match_candidate.group(1).strip()
-        if target_text.lower() in self.ignore_words or len(target_text) < 1:
-            return
+      #  target_text = match_candidate.group(1).strip()
+       # if target_text.lower() in self.ignore_words or len(target_text) < 1:
+        #    return
 
         def normalize(text: str) -> str:
             # Entferne Sonderzeichen, Zahlen, und konvertiere in Kleinbuchstaben
