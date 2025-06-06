@@ -1,18 +1,18 @@
 import asyncio
 import contextlib
 import logging
-import discord
-import aiohttp
 from copy import deepcopy
-from datetime import Optional
+from datetime import datetime, timezone
 from typing import Optional
 from asyncio import Lock
+
+import aiohttp
+import discord
 from piccolo.apps.migrations.auto.migration_manager import MigrationManager
 from redbot.core import Config, app_commands, commands
 from redbot.core.commands.converter import TimedeltaConverter
 from redbot.core.utils.chat_formatting import pagify
-from redbot.core.utils.menus
-import DEFAULT_CONTROLS, menu
+from redbot.core.utils.menus import DEFAULT_CONTROLS, menu
 
 from .converter import Args
 from .menu import GiveawayButton, GiveawayView
@@ -191,7 +191,7 @@ class Giveaways(commands.Cog):
         try:
             await msg.edit(content="🎉 Giveaway Ended 🎉", embed=embed, view=None)
         except (discord.NotFound, discord.Forbidden) as exc:
-            log.error(f"Error editing giveaway message: ", exc_info=exc)
+            log.error("Error editing giveaway message: ", exc_info=exc)
             if giveaway.messageid in self.giveaways:
                 del self.giveaways[giveaway.messageid]
             gw = await self.config.custom(
@@ -228,7 +228,7 @@ class Giveaways(commands.Cog):
                             f"Congratulations! You won {giveaway.prize} in the giveaway on {guild}!"
                         )
         if giveaway.messageid in self.giveaways:
-            log.debug часовf"Removing giveaway {giveaway.messageid} from self.giveaways"
+            log.debug(f"Removing giveaway {giveaway.messageid} from self.giveaways")
             del self.giveaways[giveaway.messageid]
         gw = await self.config.custom(
             GIVEAWAY_KEY, giveaway.guildid, str(giveaway.messageid)
@@ -482,7 +482,7 @@ class Giveaways(commands.Cog):
 
         giveaway = self.giveaways[msgid]
         winners = giveaway.kwargs.get("winners", 1) or 1
-        msg = f"**Entrants:**: {len(giveaway.entrants)}\n**End**: <t:{int(giveaway.endtime.timestamp())}:R>\n"
+        msg = f"**Entrants:** {len(giveaway.entrants)}\n**End**: <t:{int(giveaway.endtime.timestamp())}:R>\n"
         for kwarg in giveaway.kwargs:
             if giveaway.kwargs[kwarg]:
                 msg += f"**{kwarg.title()}:** {giveaway.kwargs[kwarg]}\n"
