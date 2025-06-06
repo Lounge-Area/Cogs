@@ -8,10 +8,16 @@ from asyncio import Lock
 
 import aiohttp
 import discord
+from piccolo.apps.migrations.auto.migration_manager import MigrationManager
+from piccolo.conf.apps import AppRegistry
+from piccolo.engine.sqlite import SQLiteEngine
+from piccolo.table import Table
+from piccolo.columns import BigInt, Array, Timestamp
 from redbot.core import Config, app_commands, commands
 from redbot.core.commands.converter import TimedeltaConverter
 from redbot.core.utils.chat_formatting import pagify
 from redbot.core.utils.menus import DEFAULT_CONTROLS, menu
+from redbot.core.data_manager import cog_data_path
 
 from .converter import Args
 from .menu import GiveawayButton, GiveawayView
@@ -20,8 +26,19 @@ from .objects import Giveaway, GiveawayExecError
 log = logging.getLogger("red.flare.giveaways")
 GIVEAWAY_KEY = "giveaways"
 
-# TODO: Add a way to delete giveaways that have ended from the config
+# Piccolo SQLite configuration
+DB = SQLiteEngine(path=str(cog_data_path(raw_name="Giveaways") / "giveaways.db"))
 
+APP_REGISTRY = AppRegistry(apps=["giveaways"])
+
+class GiveawayEntry(Table, db=DB):
+    guild_id = BigInt()
+    message_id = BigInt(index=True)
+    entrants = Array(base_column=BigInt())
+    created_at = Timestamp()
+    updated_at = Timestamp(auto_update=True)
+
+# TODO: Add a way to delete ended giveaways from the config and database
 
 class Giveaways(commands.Cog):
     """Giveaway Commands"""
@@ -48,8 +65,13 @@ class Giveaways(commands.Cog):
 
     async def init(self) -> None:
         await self.bot.wait_until_ready()
+        # Run Piccolo migrations
+        async with DB.transaction():
+            migration_manager = MigrationManager(app_name="giveaways")
+            await migration_manager.create_table_if_not_exists(GiveawayEntry)
+        # Load giveaways from config
         data = await self.config.custom(GIVEAWAY_KEY).all()
-        for _, guild in data.items():
+        for guild_id, guild in data.items():
             for msgid, giveaway in guild.items():
                 try:
                     if giveaway.get("ended", False):
@@ -66,6 +88,12 @@ class Giveaways(commands.Cog):
                         giveaway["emoji"],
                         **giveaway["kwargs"],
                     )
+                    # Load entrants from SQLite
+                    entry = await GiveawayEntry.objects().get(
+                        GiveawayEntry.message_id == int(msgid)
+                    )
+                    if entry:
+                        giveaway_obj.entrants = entry.entrants
                     self.giveaways[int(msgid)] = giveaway_obj
                     view = GiveawayView(self)
                     view.add_item(
@@ -92,6 +120,23 @@ class Giveaways(commands.Cog):
             self.bot.remove_dev_env_value("giveaways")
         self.giveaway_bgloop.cancel()
         asyncio.create_task(self.session.close())
+
+    async def save_entrants(self, giveaway: Giveaway) -> None:
+        """Save or update entrants for a giveaway in SQLite."""
+        async with DB.transaction():
+            existing = await GiveawayEntry.objects().get(
+                GiveawayEntry.message_id == giveaway.messageid
+            )
+            if existing:
+                existing.entrants = giveaway.entrants
+                await existing.save()
+            else:
+                await GiveawayEntry(
+                    guild_id=giveaway.guildid,
+                    message_id=giveaway.messageid,
+                    entrants=giveaway.entrants,
+                    created_at=datetime.now(timezone.utc),
+                ).save()
 
     async def check_giveaways(self) -> None:
         to_clear = []
@@ -255,6 +300,8 @@ class Giveaways(commands.Cog):
         giveaway_dict = deepcopy(giveaway_obj.__dict__)
         giveaway_dict["endtime"] = giveaway_dict["endtime"].timestamp()
         await self.config.custom(GIVEAWAY_KEY, str(ctx.guild.id), str(msg.id)).set(giveaway_dict)
+        # Initialize entrants in SQLite
+        await self.save_entrants(giveaway_obj)
 
     @giveaway.command()
     @commands.has_permissions(manage_guild=True)
@@ -276,6 +323,10 @@ class Giveaways(commands.Cog):
                 tzinfo=timezone.utc
             )
             giveaway = Giveaway(**giveaway_dict)
+            # Load entrants from SQLite
+            entry = await GiveawayEntry.objects().get(GiveawayEntry.message_id == msgid)
+            if entry:
+                giveaway.entrants = entry.entrants
             try:
                 await self.draw_winner(giveaway)
             except GiveawayExecError as e:
@@ -386,6 +437,8 @@ class Giveaways(commands.Cog):
         giveaway_dict["endtime"] = giveaway_dict["endtime"].timestamp()
         del giveaway_dict["kwargs"]["colour"]
         await self.config.custom(GIVEAWAY_KEY, str(ctx.guild.id), str(msg.id)).set(giveaway_dict)
+        # Initialize entrants in SQLite
+        await self.save_entrants(giveaway_obj)
 
     @giveaway.command()
     @commands.has_permissions(manage_guild=True)
@@ -561,6 +614,7 @@ class Giveaways(commands.Cog):
         giveaway_dict["duration"] = giveaway_dict["duration"].total_seconds()
         del giveaway_dict["kwargs"]["colour"]
         await self.config.custom(GIVEAWAY_KEY, ctx.guild.id, str(msgid)).set(giveaway_dict)
+        await self.save_entrants(giveaway)  # Update entrants in SQLite
         message = ctx.guild.get_channel(giveaway.channelid).get_partial_message(giveaway.messageid)
         hosted_by = (
             ctx.guild.get_member(giveaway.kwargs.get("hosted-by", ctx.author.id)) or ctx.author
