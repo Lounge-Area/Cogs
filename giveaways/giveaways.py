@@ -50,7 +50,7 @@ class Giveaways(commands.Cog):
         # Ensure the GiveawayEntry table exists
         try:
             async with DB.transaction():
-                await DB.run_querystring(GiveawayEntry.create_table(if_not_exists=True).querystring)
+                await GiveawayEntry.create_table(if_not_exists=True).run()
                 log.info("GiveawayEntry table created or verified.")
         except Exception as exc:
             log.error("Failed to create GiveawayEntry table: ", exc_info=exc)
@@ -261,7 +261,7 @@ class Giveaways(commands.Cog):
         ctx: commands.Context,
         channel: Optional[discord.TextChannel],
         time: TimedeltaConverter(default_unit="minutes"),
-        *,
+        *, 
         prize: str,
     ):
         """
@@ -621,11 +621,11 @@ class Giveaways(commands.Cog):
         await self.save_entrants(giveaway)  # Update entrants in SQLite
         message = ctx.guild.get_channel(giveaway.channelid).get_partial_message(giveaway.messageid)
         hosted_by = (
-            ctx.guild.get_member(giveaway.kwargs.get("hosted-by", ctx.author.id)) or ctx.author
+            ctx.guild.get_member(giveaway.kwargs.get("hosted_id", ctx.author.id)) or ctx.author
         )
         new_embed = discord.Embed(
             title=f"{giveaway.prize}",
-            description=f"\nClick the button below to enter\n\n**Hosted by:** {hosted_by.mention}\n\nEnds: <t:{int(giveaway_dict['endtime'])}:R>",
+            description=f"\nClick the button below to enter\n\n\n**Hosted by:** {hosted_by.mention}\n",
             color=flags.get("colour", await ctx.embed_color()),
         )
         await message.edit(embed=new_embed)
