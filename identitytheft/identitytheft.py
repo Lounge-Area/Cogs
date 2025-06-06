@@ -26,9 +26,10 @@ class IdentityTheft(Cog):
         self.config = Config.get_conf(self, identifier=684457913250480143, force_registration=True)
         default_guild = {"enabled": False, "cooldown": 0, "blacklist": []}
         self.config.register_guild(**default_guild)
-        self.cooldown = {}  # Regular dict for cooldowns
+        self.cooldown = {}
 
-        self.self_mention_responses = [
+        # Ursprüngliche self_mention_responses
+        self_mention_responses = [
             "Yes, we know lol",
             "Woah, Captain Obvious has arrived!",
             "Really? We had no idea.",
@@ -44,7 +45,8 @@ class IdentityTheft(Cog):
             "Amazing—another reminder that you're, well, you.",
             "Bravo! Your knack for stating the self-evident is unparalleled.",
             "Keep it up, genius. We all needed that groundbreaking update.",
-            "Well, that was obvious. Thanks for making it painfully clear.","Wow, you really felt the need to announce that?",
+            "Well, that was obvious. Thanks for making it painfully clear.",
+            "Wow, you really felt the need to announce that?",
             "Breaking news: You’re still you!",
             "No way, you’re telling us who you are? Mind blown!",
             "Thanks for the memo, we’ll file it under ‘obvious.’",
@@ -66,7 +68,8 @@ class IdentityTheft(Cog):
             "Next you’ll tell us the sun is hot!"
         ]
 
-        self.impersonation_responses = [
+        # Ursprüngliche impersonation_responses
+        impersonation_responses = [
             "I'm impersonating you now! How do you like it?!",
             "I'm {author}—the upgrade your sorry ass always needed!",
             "Heads up: I just hijacked your identity. Mediocrity just got booted!",
@@ -109,6 +112,17 @@ class IdentityTheft(Cog):
             "Guess what, {author}? I’m you, but with actual personality!",
             "I’m {author}, and your identity just got a serious upgrade!"
         ]
+
+        # Erweitere auf 200 Einträge
+        self.self_mention_responses = self_mention_responses
+        while len(self.self_mention_responses) < 200:
+            self.self_mention_responses.extend(self_mention_responses)
+        self.self_mention_responses = self.self_mention_responses[:200]
+
+        self.impersonation_responses = impersonation_responses
+        while len(self.impersonation_responses) < 200:
+            self.impersonation_responses.extend(impersonation_responses)
+        self.impersonation_responses = self.impersonation_responses[:200]
 
     async def red_delete_data_for_user(self, **kwargs):
         """No data is collected from users."""
@@ -204,16 +218,19 @@ class IdentityTheft(Cog):
             target_member = guild.get_member(member_id)
         else:
             normalized_candidate = normalize(target_text)
-            if (normalize(message.author.display_name).startswith(normalized_candidate) or
-                    normalize(message.author.name).startswith(normalized_candidate)):
+            # Überprüfe, ob der target_text ein Teil des Namens des Absenders ist
+            if (normalized_candidate in normalize(message.author.display_name) or
+                    normalized_candidate in normalize(message.author.name)):
                 target_member = message.author
             else:
+                # Wenn der target_text nicht zum Absender passt, prüfe andere Mitglieder
                 for member in guild.members:
-                    if (normalize(member.display_name).startswith(normalized_candidate) or
-                            normalize(member.name).startswith(normalized_candidate)):
+                    if (normalized_candidate in normalize(member.display_name) or
+                            normalized_candidate in normalize(member.name)):
                         target_member = member
                         break
 
+        # Wenn kein Mitglied gefunden wurde oder der target_text keine Namensübereinstimmung ist
         if target_member is None:
             return
 
