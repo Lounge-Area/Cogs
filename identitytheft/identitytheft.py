@@ -94,117 +94,127 @@ class IdentityTheft(commands.Cog):
             guild_blacklist.remove(ctx.author.id)
         await ctx.send("You have opted in for webhook impersonation.")
 
-    @commands.Cog.listener("on_message_without_command")
-    async def on_message_without_command(self, message: discord.Message):
-        if message.author.bot or not message.guild:
-            return
-        if await self.bot.cog_disabled_in_guild(self, message.guild):
-            return
-        if not await self.config.guild(message.guild).enabled():
-            return
-        if self.cooldown[message.guild.id] > datetime.now():
-            return
+@commands.Cog.listener("on_message_without_command")
+async def on_message_without_command(self, message: discord.Message):
+    if message.author.bot or not message.guild:
+        return
+    if await self.bot.cog_disabled_in_guild(self, message.guild):
+        return
+    if not await self.config.guild(message.guild).enabled():
+        return
+    if self.cooldown[message.guild.id] > datetime.now():
+        return
 
-        cleaned_content = message.clean_content.strip()
-        lower_content = cleaned_content.lower()
-        index = -1
-        for variant in ["i'm", "i’m", "im"]:
-            index = lower_content.find(variant)
-            if index != -1:
-                break
-        if index == -1:
-            return
+    cleaned_content = message.clean_content.strip()
+    lower_content = cleaned_content.lower()
+    index = -1
+    for variant in ["i'm", "i’m", "im"]:
+        index = lower_content.find(variant)
+        if index != -1:
+            break
+    if index == -1:
+        return
 
-        candidate = cleaned_content[index:]
-        match_candidate = re.match(r"(?i)^\s*(?:i(?:['’]m|m))\s+(.+)", candidate)
-        if not match_candidate:
-            return
+    candidate = cleaned_content[index:]
+    match_candidate = re.match(r"(?i)^\s*(?:i(?:['’]m|m))\s+(.+)", candidate)
+    if not match_candidate:
+        return
 
-        target_text = match_candidate.group(1).strip()
+    target_text = match_candidate.group(1).strip()
 
-        # Ignore common words like "fine"
-        if target_text.lower() in self.ignore_words or len(target_text) < 2:
-            return
+    # Ignore common words or very short inputs
+    if target_text.lower() in self.ignore_words or len(target_text) < 2:
+        return
 
-        def normalize(text: str) -> str:
-            return re.sub(r'[^a-z0-9]', '', text.lower())
+    def normalize(text: str) -> str:
+        return re.sub(r'[^a-z0-9]', '', text.lower())
 
-        target_member = None
-        is_self = False
+    target_member = None
+    is_self = False
+    normalized_target = normalize(target_text)
 
-        # Check for mention (e.g., "I'm @Floo")
-        mention_match = re.match(r"<@!?(\d+)>", target_text)
-        if mention_match:
-            member_id = int(mention_match.group(1))
-            target_member = message.guild.get_member(member_id)
-            if target_member and target_member.id == message.author.id:
-                is_self = True
+    # Check for mention (e.g., "I'm @Floo")
+    mention_match = re.match(r"<@!?(\d+)>", target_text)
+    if mention_match:
+        member_id = int(mention_match.group(1))
+        target_member = message.guild.get_member(member_id)
+        if target_member and target_member.id == message.author.id:
+            is_self = True
+    else:
+        # Check for partial text name (e.g., "I'm User" for "User123")
+        # First, try to match the author
+        normalized_author_display = normalize(message.author.display_name)
+        normalized_author_name = normalize(message.author.name)
+        if normalized_target in normalized_author_display or normalized_target in normalized_author_name:
+            target_member = message.author
+            is_self = True
         else:
-            # Check for text name (e.g., "I'm Floo")
-            normalized_target = normalize(target_text)
-            normalized_author_display = normalize(message.author.display_name)
-            normalized_author_name = normalize(message.author.name)
-            # Require exact or near-exact match for self-identification
-            if (normalized_target == normalized_author_display or
-                normalized_target == normalized_author_name):
-                target_member = message.author
-                is_self = True
-            else:
-                # Find other member by name
-                for member in message.guild.members:
-                    if (normalize(member.display_name) == normalized_target or
-                        normalize(member.name) == normalized_target):
-                        target_member = member
-                        break
+            # Find other members with partial name match
+            potential_matches = []
+            for member in message.guild.members:
+                normalized_member_display = normalize(member.display_name)
+                normalized_member_name = normalize(member.name)
+                if normalized_target in normalized_member_display or normalized_target in normalized_member_name:
+                    potential_matches.append(member)
 
-        if not target_member:
-            return
+            # Handle multiple matches (optional: pick the first or skip if ambiguous)
+            if len(potential_matches) == 1:
+                target_member = potential_matches[0]
+            elif len(potential_matches) > 1:
+                # Skip ambiguous cases or pick the closest match (e.g., shortest name)
+                shortest_match = min(potential_matches, key=lambda m: len(m.display_name))
+                target_member = shortest_match
+                # Optional: Notify about ambiguity
+                # await message.channel.send(f"Multiple users match '{target_text}'. Using {shortest_match.display_name}.")
 
-        cooldown_seconds = await self.config.guild(message.guild).cooldown()
-        self.cooldown[message.guild.id] = datetime.now() + timedelta(seconds=cooldown_seconds)
+    if not target_member:
+        return
 
-        if target_member.id == message.guild.me.id:
-            try:
-                await message.channel.send(
-                    f"Identity theft is not a joke {message.author.mention}! Millions of families suffer every year!",
-                    allowed_mentions=discord.AllowedMentions(users=[message.author])
-                )
-            except discord.HTTPException as e:
-                log.error(f"Failed to send bot impersonation response: {e}")
-            return
+    cooldown_seconds = await self.config.guild(message.guild).cooldown()
+    self.cooldown[message.guild.id] = datetime.now() + timedelta(seconds=cooldown_seconds)
 
-        if is_self:
-            try:
-                await message.channel.send(f"Hey {message.author.display_name}!")
-            except discord.HTTPException as e:
-                log.error(f"Failed to send self-identification response: {e}")
-            return
-
-        # Impersonation logic
+    if target_member.id == message.guild.me.id:
         try:
-            await message.channel.send(f"How would you like it if I pretended to be you, {message.author.mention}?!")
-        except discord.HTTPException as e:
-            log.error(f"Failed to send impersonation warning: {e}")
-            return
-
-        if message.author.id in await self.config.guild(message.guild).blacklist():
-            return
-
-        permissions = message.channel.permissions_for(message.guild.me)
-        if not permissions.manage_webhooks:
-            log.warning(f"Missing manage_webhooks permission in channel {message.channel.id}")
-            return
-
-        try:
-            webhooks = await message.channel.webhooks()
-            webhook = next((wh for wh in webhooks if wh.name == "IdentityTheftWebhook"), None)
-            if not webhook:
-                webhook = await message.channel.create_webhook(name="IdentityTheftWebhook")
-            impersonation_message = random.choice(self.impersonation_responses).format(author=message.author.display_name)
-            await webhook.send(
-                impersonation_message,
-                username=message.author.display_name,
-                avatar_url=message.author.display_avatar.url
+            await message.channel.send(
+                f"Identity theft is not a joke {message.author.mention}! Millions of families suffer every year!",
+                allowed_mentions=discord.AllowedMentions(users=[message.author])
             )
         except discord.HTTPException as e:
-            log.error(f"Failed to send webhook impersonation: {e}")
+            log.error(f"Failed to send bot impersonation response: {e}")
+        return
+
+    if is_self:
+        try:
+            await message.channel.send(f"Hey {message.author.display_name}!")
+        except discord.HTTPException as e:
+            log.error(f"Failed to send self-identification response: {e}")
+        return
+
+    # Impersonation logic
+    try:
+        await message.channel.send(f"How would you like it if I pretended to be you, {message.author.mention}?!")
+    except discord.HTTPException as e:
+        log.error(f"Failed to send impersonation warning: {e}")
+        return
+
+    if message.author.id in await self.config.guild(message.guild).blacklist():
+        return
+
+    permissions = message.channel.permissions_for(message.guild.me)
+    if not permissions.manage_webhooks:
+        log.warning(f"Missing manage_webhooks permission in channel {message.channel.id}")
+        return
+
+    try:
+        webhooks = await message.channel.webhooks()
+        webhook = next((wh for wh in webhooks if wh.name == "IdentityTheftWebhook"), None)
+        if not webhook:
+            webhook = await message.channel.create_webhook(name="IdentityTheftWebhook")
+        impersonation_message = random.choice(self.impersonation_responses).format(author=message.author.display_name)
+        await webhook.send(
+            impersonation_message,
+            username=message.author.display_name,
+            avatar_url=message.author.display_avatar.url
+        )
+    except discord.HTTPException as e:
+        log.error(f"Failed to send webhook impersonation: {e}")
