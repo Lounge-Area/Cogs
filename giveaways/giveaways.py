@@ -8,11 +8,8 @@ from asyncio import Lock
 
 import aiohttp
 import discord
-from piccolo.apps.migrations.auto.migration_manager import MigrationManager
-from piccolo.conf.apps import AppRegistry
 from piccolo.engine.sqlite import SQLiteEngine
-from piccolo.table import Table
-from piccolo.columns import BigInt, Array, Timestamp
+from piccolo.apps.migrations.auto.migration_manager import MigrationManager
 from redbot.core import Config, app_commands, commands
 from redbot.core.commands.converter import TimedeltaConverter
 from redbot.core.utils.chat_formatting import pagify
@@ -22,23 +19,13 @@ from redbot.core.data_manager import cog_data_path
 from .converter import Args
 from .menu import GiveawayButton, GiveawayView
 from .objects import Giveaway, GiveawayExecError
+from .piccolo_app import GiveawayEntry
 
 log = logging.getLogger("red.flare.giveaways")
 GIVEAWAY_KEY = "giveaways"
 
-# Piccolo SQLite configuration
+# SQLite configuration
 DB = SQLiteEngine(path=str(cog_data_path(raw_name="Giveaways") / "giveaways.db"))
-
-APP_REGISTRY = AppRegistry(apps=["giveaways"])
-
-class GiveawayEntry(Table, db=DB):
-    guild_id = BigInt()
-    message_id = BigInt(index=True)
-    entrants = Array(base_column=BigInt())
-    created_at = Timestamp()
-    updated_at = Timestamp(auto_update=True)
-
-# TODO: Add a way to delete ended giveaways from the config and database
 
 class Giveaways(commands.Cog):
     """Giveaway Commands"""
@@ -150,6 +137,24 @@ class Giveaways(commands.Cog):
                 await self.config.custom(GIVEAWAY_KEY, giveaway.guildid, str(msgid)).set(gw)
         for msgid in to_clear:
             del self.giveaways[msgid]
+        # Clean up ended giveaways
+        await self.cleanup_ended_giveaways()
+
+    async def cleanup_ended_giveaways(self):
+        """Remove ended giveaways from SQLite and Config."""
+        async with DB.transaction():
+            data = await self.config.custom(GIVEAWAY_KEY).all()
+            ended_msgids = [
+                int(msgid)
+                for guild_id, giveaways in data.items()
+                for msgid, gw in giveaways.items()
+                if gw.get("ended", False)
+            ]
+            await GiveawayEntry.delete().where(GiveawayEntry.message_id.in_(ended_msgids))
+            for guild_id in data:
+                for msgid in ended_msgids:
+                    if str(msgid) in data[guild_id]:
+                        await self.config.custom(GIVEAWAY_KEY, guild_id, str(msgid)).clear()
 
     async def draw_winner(self, giveaway: Giveaway):
         if not giveaway.messageid:
