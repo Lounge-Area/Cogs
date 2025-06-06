@@ -1,4 +1,3 @@
-```python
 import asyncio
 import contextlib
 import contextlib
