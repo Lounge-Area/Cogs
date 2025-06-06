@@ -44,7 +44,26 @@ class IdentityTheft(Cog):
             "Amazing—another reminder that you're, well, you.",
             "Bravo! Your knack for stating the self-evident is unparalleled.",
             "Keep it up, genius. We all needed that groundbreaking update.",
-            "Well, that was obvious. Thanks for making it painfully clear."
+            "Well, that was obvious. Thanks for making it painfully clear.","Wow, you really felt the need to announce that?",
+            "Breaking news: You’re still you!",
+            "No way, you’re telling us who you are? Mind blown!",
+            "Thanks for the memo, we’ll file it under ‘obvious.’",
+            "Oh, you’re you? I thought you were someone interesting!",
+            "Big reveal, huh? We already knew that one!",
+            "You’re preaching to the choir, buddy!",
+            "Wait, hold the phone—you’re YOU?!",
+            "Groundbreaking discovery: You’re exactly who we thought!",
+            "Thanks for clarifying, we were so confused!",
+            "Yawn, tell us something we don’t know!",
+            "Oh, you’re stating your identity? How original!",
+            "Alert the press: You’ve confirmed the obvious!",
+            "Great, now we know you’re you. What’s next, 1+1=2?",
+            "You’re you? Wow, that’s a plot twist nobody saw coming!",
+            "Thanks for the heads-up, but we’ve got eyes!",
+            "Whoa, slow down, Einstein, we already figured that out!",
+            "You’re dropping truth bombs like they’re obvious!",
+            "Congratulations, you’ve mastered stating the obvious!",
+            "Next you’ll tell us the sun is hot!"
         ]
 
         self.impersonation_responses = [
@@ -68,7 +87,27 @@ class IdentityTheft(Cog):
             "Hey, I'm {author} now—your old self was about as interesting as soggy cereal!",
             "Aw man, my dick is tiny now!",
             "Your identity was a steaming pile of shit. Now I'm {author}—the upgrade you never deserved!",
-            "I'm {author} now, and your identity? Fuck that—I'm the real deal!"
+            "I'm {author} now, and your identity? Fuck that—I'm the real deal!",
+            "Look out, I’m {author} now, and I’m way cooler!",
+            "I just stole your vibe, {author}, and I’m rocking it better!",
+            "Sorry, {author}, your identity’s mine now—time for an upgrade!",
+            "I’m {author} 3.0, and your old self is officially retired!",
+            "Boom! I’m {author}, and I make you look like a beta version!",
+            "Your identity? Snatched. Meet the new and improved {author}!",
+            "I’m {author} now, and let’s just say I’m the premium edition!",
+            "Tough luck, {author}, I’m you but with better swagger!",
+            "I hijacked your identity, {author}, and I’m making it legendary!",
+            "Yo, I’m {author}, and your old self was a total snooze-fest!",
+            "Identity theft alert: I’m {author}, and I’m slaying it!",
+            "I’m {author} now—consider it a glow-up you never asked for!",
+            "Your identity was boring, so I’m {author} with extra spice!",
+            "I just took over as {author}, and damn, I’m an improvement!",
+            "Say goodbye to lame {author}, I’m the new boss in town!",
+            "I’m {author}, and your old self can take a hike!",
+            "Identity stolen, {author}! I’m the cooler version now!",
+            "I’m {author} now, and your old vibe was straight-up trash!",
+            "Guess what, {author}? I’m you, but with actual personality!",
+            "I’m {author}, and your identity just got a serious upgrade!"
         ]
 
     async def red_delete_data_for_user(self, **kwargs):
