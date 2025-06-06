@@ -20,7 +20,7 @@ BUTTON_STYLE = {
 
 class GiveawayButton(Button):
     def __init__(self, label: str, style: str, emoji, cog, id, update=False):
-        super().__init__(label=label, style=BUTTON_STYLE[style], emoji=emoji, custom_id=f"giveaway_button:{id}")
+        super().__init__(label=label, style=BUTTON_STYLE.get(style, discord.ButtonStyle.green), emoji=emoji, custom_id=f"giveaway_button:{id}")
         self.default_label = label
         self.update = update
         self.cog = cog
@@ -34,19 +34,19 @@ class GiveawayButton(Button):
                 await self.cog.save_entrants(giveaway)
                 await interaction.followup.send(f"You have been entered into the giveaway for {giveaway.prize}.", ephemeral=True)
             except GiveawayEnterError as e:
-                await interaction.followup.send(e.message, ephemeral=True)
+                await interaction.followup.send(f"{e.message}", ephemeral=True)
                 return
             except GiveawayExecError as e:
-                log.exception("Error while adding user to giveaway", exc_info=e)
+                log.exception("Error while adding giveaway user to giveaway", exc_info=e)
                 return
             except AlreadyEnteredError:
                 if interaction.user.id in giveaway.entrants:
                     giveaway.entrants.remove(interaction.user.id)
                     await self.cog.save_entrants(giveaway)
-                await interaction.followup.send("You have been removed from the giveaway.", ephemeral=True)
+                await interaction.followup.send(f"You have been removed from the giveaway.", ephemeral=True)
             await self.update_label(giveaway, interaction)
         else:
-            await interaction.followup.send("This giveaway is no longer active.", ephemeral=True)
+            await interaction.followup.send(f"This giveaway is no longer active.", ephemeral=True)
 
     async def update_label(self, giveaway, interaction):
         if self.update:

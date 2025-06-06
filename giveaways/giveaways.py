@@ -309,7 +309,7 @@ class Giveaways(commands.Cog):
 
     @giveaway.command()
     @commands.has_permissions(manage_guild=True)
-    @app_commands_async.describe(msgid="The message ID of the giveaway to reroll.")
+    @app_commands.describe(msgid="The message ID of the giveaway to reroll.")
     async def reroll(self, ctx: commands.Context, msgid: int):
         """Reroll a giveaway."""
         if msgid not in self.locks:
@@ -676,30 +676,30 @@ class Giveaways(commands.Cog):
         if args.get("multi-roles"):
             msg += f"**Multiplier Roles:** {', '.join([ctx.guild.get_role(x).mention for x in args['multi-roles']])}\n"
         if args.get("cost"):
-            msg += f"**Cost:** {args['cost']}\n"
+            msg += f"**Cost:** {args.get('cost')}\n"
         if args.get("joined"):
             msg += f"**Joined:** {args['joined']} days\n"
         if args.get("created"):
-            msg += f"**Created:** {args['created']} days\n"
+            msg += f"**Created:** {args.get('created')} days\n"
         if args.get("blacklist"):
-            msg += f"**Blacklist:** {', '.join([ctx.guild.get_role(x).mention for x in args['blacklist']])}\n"
+            msg += f"**Blacklist:** {', '.join([ctx.guild.get_role(x).mention for x in args['blacklist']])} "
         if args.get("winners"):
-            msg += f"**Winners:** {args['winners']}\n"
+            msg += f"**Winners:** {args.get('winners')} "
         if args.get("mee6_level"):
-            msg += f"**MEE6 Level:** {args['mee6_level']}\n"
+            msg += f"**MEE6 Level:** {args.get('mee6_level')} "
         if args.get("amari_level"):
-            msg += f"**Amari Level:** {args['amari_level']}\n"
+            msg += f"**Amari Level:** {args.get('amari_level')} "
         if args.get("amari_weekly_xp"):
-            msg += f"**Amari Weekly XP:** {args['amari_weekly_xp']}\n"
+            msg += f"**Amari Weekly XP:** {args.get('amari_weekly_xp')} "
         if args.get("tatsu_level"):
-            msg += f"**Tatsu Level:** {args['tatsu_level']}\n"
+            msg += f"**Tatsu Level:** {args.get('tatsu_level')} "
         if args.get("tatsu_rep"):
-            msg += f"**Tatsu Rep:** {args['tatsu_rep']}\n"
+            msg += f"**Tatsu Level:** {args.get('tatsu_rep')} "
         if args.get("level_req"):
-            msg += f"**Level Requirement:** {args['level_req']}\n"
+            msg += f"**Level Requirement:** {args.get('level_req')} "
         if args.get("rep_req"):
-            msg += f"**Rep Requirement:** {args['rep_req']}\n"
+            msg += f"**Rep Requirement:** {args.get('rep_req')} "
         if args.get("bypass-roles"):
-            msg += f"**Bypass Roles:** {', '.join([ctx.guild.get_role(x).mention for x in args['bypass-roles']])} ({args.get('bypass-type', 'or')})\n"
+            msg += f"**Bypass Roles:** {', '.join([ctx.guild.get_role(x).mention for x in args.get('bypass_roles')])} ({args.get('bypass_type', 'or')}) "
 
         return msg
