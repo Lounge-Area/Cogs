@@ -2,10 +2,9 @@ import asyncio
 import logging
 import uuid
 import random
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from threading import Lock
 from typing import List, Dict, Optional, Set
-from copy import deepcopy
 
 import discord
 from redbot.core import commands, Config
@@ -654,8 +653,15 @@ class Giveaways(commands.Cog):
             )
             embed.set_footer(text=f"Reroll: {(await self.bot.get_prefix(None))[-1]}gw reroll {msg_id} | Ended at" if ended_bool else "Active")
 
-            msg = channel.get_partial_message(msg_id)
-            await msg.edit(content="🎉 Giveaway Ended 🎉" if ended_bool else "🎉 Giveaway 🎉", embed=embed, view=None if ended_bool else GiveawayView(self))
+            # Check if message exists, create new one if not
+            try:
+                msg = channel.get_partial_message(msg_id)
+                await msg.edit(content="🎉 Giveaway Ended 🎉" if ended_bool else "🎉 Giveaway 🎉", embed=embed, view=None if ended_bool else GiveawayView(self))
+            except discord.NotFound:
+                log.warning(f"Message {msg_id} not found, creating new message")
+                msg = await channel.send(content="🎉 Giveaway Ended 🎉" if ended_bool else "🎉 Giveaway 🎉", embed=embed, view=None if ended_bool else GiveawayView(self))
+                giveaway.message_id = msg.id
+                await self.save_giveaway(giveaway)
 
             await ctx.send(f"Added old giveaway {msg_id} {'(ended)' if ended_bool else '(active)'}")
             log.info(f"Added old giveaway {msg_id} in guild {ctx.guild.id}")
@@ -675,7 +681,9 @@ class Giveaways(commands.Cog):
                 conditions={"winners": winners},
                 host_id=ctx.author.id
             )
-            self.giveaways[msg_id] = fallback_giveaway
+            msg = await channel.send(content="🎉 Fallback Giveaway 🎉", embed=discord.Embed(title="Fallback Giveaway", description="Click to enter\nEnds: <t:0:R>"))
+            fallback_giveaway.message_id = msg.id
+            self.giveaways[msg.id] = fallback_giveaway
             await self.save_giveaway(fallback_giveaway)
             await ctx.send("Fallback giveaway created with minimal settings!")
 
@@ -686,46 +694,3 @@ class Giveaways(commands.Cog):
         try:
             if msg_id not in self.giveaways or self.giveaways[msg_id].guild_id != ctx.guild.id:
                 await ctx.send("Giveaway not found")
-                return
-
-            giveaway = self.giveaways[msg_id]
-            ids = [int(uid.strip()) for uid in user_ids.split(",") if uid.strip()]
-            if not ids:
-                await ctx.send("No valid user IDs provided.")
-                return
-
-            giveaway.add_entrants_by_ids(ids)
-            await self.save_giveaway(giveaway)
-            await ctx.send(f"Added {len(ids)} entrants to giveaway {msg_id}")
-            log.info(f"Added entrants {ids} to giveaway {msg_id} in guild {ctx.guild.id}")
-        except ValueError:
-            await ctx.send("Invalid user ID format. Please provide IDs as comma-separated numbers (e.g., 123,456).")
-        except Exception as e:
-            log.error(f"Error adding entrants to giveaway {msg_id}: {str(e)}", exc_info=e)
-            await ctx.send(f"Error adding entrants: {str(e)}")
-
-    def generate_settings_text(self, ctx: commands.Context, arguments: Args) -> str:
-        settings = []
-        if arguments.get("roles"):
-            roles = [ctx.guild.get_role(r) for r in arguments["roles"]]
-            settings.append(f"Required Roles: {', '.join(r.mention for r in roles if r)}")
-        if arguments.get("blacklist"):
-            blacklist = [ctx.guild.get_role(r) for r in arguments["blacklist"]]
-            settings.append(f"Blacklisted Roles: {', '.join(r.mention for r in blacklist if r)}")
-        if arguments.get("cost"):
-            settings.append(f"Cost: {arguments['cost']} credits")
-        if arguments.get("joined_days"):
-            settings.append(f"Joined Server: {arguments['joined_days']} days")
-        if arguments.get("account_age_days"):
-            settings.append(f"Account Age: {arguments['account_age_days']} days")
-        if arguments.get("multiplier") and arguments.get("multi_roles"):
-            multi_roles = [ctx.guild.get_role(r) for r in arguments["multi_roles"] if ctx.guild.get_role(r)]
-            if multi_roles:
-                settings.append(f"Multiplier: {arguments['multiplier']}x for {', '.join(r.mention for r in multi_roles)}")
-        return "\n".join(settings)
-
-    async def award_points(self, user_id: int, amount: int):
-        # Fictional integration: Award points to a user
-        log.info(f"Awarding {amount} points to user {user_id}")
-        # In a real implementation, this would interact with a points system API
-        return True
