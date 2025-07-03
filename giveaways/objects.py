@@ -60,7 +60,7 @@ class Giveaway:
             if not self.conditions.get("multientry", False) and user.id in self.entrants:
                 raise AlreadyEnteredError("You have already entered this giveaway")
             
-            if not self._check_conditions(user):
+            if not await self._check_conditions(user):  # Await the async method
                 raise GiveawayEnterError("You do not meet the giveaway entry conditions")
             
             self.entrants.add(user.id)
@@ -99,7 +99,7 @@ class Giveaway:
             log.info(f"Drew {len(self.winners)} winners for giveaway {self.id}: {self.winners}")
             return self.winners
 
-    def _check_conditions(self, user: discord.Member) -> bool:
+    async def _check_conditions(self, user: discord.Member) -> bool:  # Must be async def
         with self._lock:
             try:
                 if self.conditions.get("roles"):
@@ -121,9 +121,9 @@ class Giveaway:
                         return False
                 
                 if self.conditions.get("cost"):
-                    if not await bank.can_spend(user, self.conditions["cost"]):
+                    if not await bank.can_spend(user, self.conditions["cost"]):  # Await is valid here
                         return False
-                    await bank.withdraw_credits(user, self.conditions["cost"])
+                    await bank.withdraw_credits(user, self.conditions["cost"])  # Await is valid here
                 
                 return self._check_bypass_roles(user)
             except Exception as e:
