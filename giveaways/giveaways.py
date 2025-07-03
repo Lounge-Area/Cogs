@@ -153,8 +153,11 @@ class Giveaways(commands.Cog):
                 )
                 winner_objs = [guild.get_member(w) for w in winners if guild.get_member(w)]
 
+            # Fix the f-string syntax
+            winner_count = giveaway.conditions.get("winners", 1)
+            title_prefix = f"{winner_count}x " if winner_count > 1 else ""
             embed = discord.Embed(
-                title=f"{f'{giveaway.conditions.get('winners', 1)}x ' if giveaway.conditions.get('winners', 1) > 1 else ''}{giveaway.title}",
+                title=f"{title_prefix}{giveaway.title}",
                 description=f"Winner(s):\n{winner_text}",
                 color=discord.Color.blue(),
                 timestamp=datetime.now(timezone.utc)
@@ -167,7 +170,7 @@ class Giveaways(commands.Cog):
             if giveaway.conditions.get("announce") and winner_objs:
                 announce_embed = discord.Embed(
                     title="Giveaway Ended",
-                    description=f"Congratulations to the {f'{giveaway.conditions.get('winners', 1)} ' if giveaway.conditions.get('winners', 1) > 1 else ''}winner{'s' if giveaway.conditions.get('winners', 1) > 1 else ''} of [{giveaway.title}]({msg.jump_url}).\n{winner_text}",
+                    description=f"Congratulations to the {f'{winner_count} ' if winner_count > 1 else ''}winner{'s' if winner_count > 1 else ''} of [{giveaway.title}]({msg.jump_url}).\n{winner_text}",
                     color=discord.Color.blue()
                 )
                 await channel.send(
