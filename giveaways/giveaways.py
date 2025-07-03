@@ -286,9 +286,11 @@ class Giveaways(commands.Cog):
             if arguments.get("show_requirements"):
                 description += "\n\n**Requirements:**\n" + self.generate_settings_text(ctx, arguments)
             
+            winner_count = arguments.get("winners", 1)
+            title_prefix = f"{winner_count}x " if winner_count > 1 else ""
             embed = discord.Embed(
-                title=f"{f'{giveaway.conditions.get('winners', 1)}x ' if giveaway.conditions.get('winners', 1) > 1 else ''}{giveaway.title}",
-                description=f"{description}\n\nClick the button to enter\n\n**Hosted by:** {ctx.guild.get_member(giveaway.host_id).mention}\nEnds: <t:{int(end_time.timestamp())}:R>",
+                title=f"{title_prefix}{arguments['prize']}",
+                description=f"{description}\n\nClick the button to enter\n\n**Hosted by:** {ctx.guild.get_member(arguments.get('hosted-by', ctx.author.id)).mention}\nEnds: <t:{int(end_time.timestamp())}:R>",
                 color=arguments.get("colour", discord.Color.blue())
             )
             
@@ -421,8 +423,10 @@ class Giveaways(commands.Cog):
             self.giveaways[msg_id] = giveaway
             await self.save_giveaway(giveaway)
             
+            winner_count = winners
+            title_prefix = f"{winner_count}x " if winner_count > 1 else ""
             embed = discord.Embed(
-                title=f"{f'{winners}x ' if winners > 1 else ''}{prize}",
+                title=f"{title_prefix}{prize}",
                 description=f"Winner(s): {'N/A' if not ended else 'No winners (not enough entrants)'}\nEnds: <t:{int(end_time.timestamp())}:R>",
                 color=discord.Color.blue(),
                 timestamp=datetime.now(timezone.utc) if ended else None
