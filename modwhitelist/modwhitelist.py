@@ -137,4 +137,4 @@ class ModWhitelist(commands.Cog):
             await ctx.send("Keine Kanäle in der Whitelist.")
 
 async def setup(bot):
-    await bot.add_cog(ModWhitelist(bot))
+    await bot.add_cog(ModWhitelist(bot)) 
