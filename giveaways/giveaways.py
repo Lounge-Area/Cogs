@@ -153,7 +153,6 @@ class Giveaways(commands.Cog):
                 )
                 winner_objs = [guild.get_member(w) for w in winners if guild.get_member(w)]
 
-            # Fix the f-string syntax
             winner_count = giveaway.conditions.get("winners", 1)
             title_prefix = f"{winner_count}x " if winner_count > 1 else ""
             embed = discord.Embed(
@@ -516,8 +515,10 @@ class Giveaways(commands.Cog):
                 if value:
                     msg += f"**{key.title()}:** {value}\n"
                     
+            winner_count = giveaway.conditions.get("winners", 1)
+            title_prefix = f"{winner_count}x " if winner_count > 1 else ""
             embed = discord.Embed(
-                title=f"{f'{giveaway.conditions.get('winners', 1)}x ' if giveaway.conditions.get('winners', 1) > 1 else ''}{giveaway.title}",
+                title=f"{title_prefix}{giveaway.title}",
                 description=msg,
                 color=discord.Color.blue()
             )
