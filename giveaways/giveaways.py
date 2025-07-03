@@ -36,7 +36,7 @@ class AlreadyEnteredError(GiveawayError):
 class Giveaways(commands.Cog):
     """Giveaway Commands"""
 
-    __version__ = "1.0.4"
+    __version__ = "1.0.5"
     __author__ = "flare"
 
     def format_help_for_context(self, ctx):
@@ -121,7 +121,7 @@ class Giveaways(commands.Cog):
 
     async def check_giveaways(self) -> None:
         to_clear = []
-        for msg_id, giveaway in deepcopy(self.giveaways).items():
+        for msg_id, giveaway in self.giveaways.items():
             if not giveaway.is_active():
                 log.info(f"Giveaway {msg_id} has ended, drawing winners")
                 await self.draw_winner(giveaway)
@@ -258,7 +258,21 @@ class Giveaways(commands.Cog):
             log.info(f"Started giveaway {giveaway.id} in guild {ctx.guild.id}")
         except Exception as e:
             log.error(f"Error starting giveaway: {str(e)}", exc_info=e)
-            await ctx.send(f"Error starting giveaway: {str(e)}")
+            await ctx.send(f"Error starting giveaway: {str(e)}. Attempting to create with minimal data...")
+            # Fallback: Erstelle ein minimales Giveaway, falls Fehler auftreten
+            fallback_giveaway = Giveaway(
+                guild_id=ctx.guild.id,
+                channel_id=channel.id,
+                message_id=msg.id if 'msg' in locals() else 0,
+                end_time=datetime.now(timezone.utc) + timedelta(minutes=1),
+                title=prize or "Fallback Giveaway",
+                emoji="🎉",
+                conditions={"winners": 1},
+                host_id=ctx.author.id
+            )
+            self.giveaways[fallback_giveaway.message_id] = fallback_giveaway
+            await self.save_giveaway(fallback_giveaway)
+            await ctx.send("Fallback giveaway created with minimal settings!")
 
     @giveaway.command(name="advanced")
     @commands.has_permissions(manage_guild=True)
@@ -344,7 +358,22 @@ class Giveaways(commands.Cog):
             log.info(f"Started advanced giveaway {giveaway.id} in guild {ctx.guild.id}")
         except Exception as e:
             log.error(f"Error starting advanced giveaway: {str(e)}", exc_info=e)
-            await ctx.send(f"Error starting giveaway: {str(e)}")
+            await ctx.send(f"Error starting giveaway: {str(e)}. Attempting to create with minimal data...")
+            fallback_giveaway = Giveaway(
+                guild_id=ctx.guild.id,
+                channel_id=channel.id,
+                message_id=0,
+                end_time=datetime.now(timezone.utc) + timedelta(minutes=1),
+                title="Fallback Giveaway",
+                emoji="🎉",
+                conditions={"winners": 1},
+                host_id=ctx.author.id
+            )
+            msg = await channel.send(content="🎉 Fallback Giveaway 🎉", embed=discord.Embed(title="Fallback Giveaway", description="Click to enter\nEnds: <t:0:R>"))
+            fallback_giveaway.message_id = msg.id
+            self.giveaways[msg.id] = fallback_giveaway
+            await self.save_giveaway(fallback_giveaway)
+            await ctx.send("Fallback giveaway created with minimal settings!")
 
     @giveaway.command(name="edit")
     @commands.has_permissions(manage_guild=True)
@@ -480,23 +509,31 @@ class Giveaways(commands.Cog):
                 return
 
             giveaway = self.giveaways[msg_id]
-            status = giveaway.get_status()
-            msg = (f"**Entrants:** {status['entrants_count']}\n"
-                   f"**End**: <t:{int(giveaway.end_time.timestamp())}:R>\n"
-                   f"**Status**: {'Active' if status['is_active'] else 'Ended'}\n")
-            for key, value in giveaway.conditions.items():
-                if value:
-                    msg += f"**{key.title()}:** {value}\n"
+            # Use a timeout to prevent deadlock
+            lock_acquired = await asyncio.to_thread(lambda: giveaway._lock.acquire(timeout=5))
+            if not lock_acquired:
+                await ctx.send("Could not acquire lock for giveaway info, try again later.")
+                return
+            try:
+                status = giveaway.get_status()
+                msg = (f"**Entrants:** {status['entrants_count']}\n"
+                       f"**End**: <t:{int(giveaway.end_time.timestamp())}:R>\n"
+                       f"**Status**: {'Active' if status['is_active'] else 'Ended'}\n")
+                for key, value in giveaway.conditions.items():
+                    if value:
+                        msg += f"**{key.title()}:** {value}\n"
 
-            winner_count = giveaway.conditions.get("winners", 1)
-            title_prefix = f"{winner_count}x " if winner_count > 1 else ""
-            embed = discord.Embed(
-                title=f"{title_prefix}{giveaway.title}",
-                description=msg,
-                color=discord.Color.blue()
-            )
-            embed.set_footer(text=f"Giveaway ID: {giveaway.id}")
-            await ctx.send(embed=embed)
+                winner_count = giveaway.conditions.get("winners", 1)
+                title_prefix = f"{winner_count}x " if winner_count > 1 else ""
+                embed = discord.Embed(
+                    title=f"{title_prefix}{giveaway.title}",
+                    description=msg,
+                    color=discord.Color.blue()
+                )
+                embed.set_footer(text=f"Giveaway ID: {giveaway.id}")
+                await ctx.send(embed=embed)
+            finally:
+                giveaway._lock.release()
         except Exception as e:
             log.error(f"Error getting info for giveaway {msg_id}: {str(e)}", exc_info=e)
             await ctx.send(f"Error getting giveaway info: {str(e)}")
@@ -506,7 +543,6 @@ class Giveaways(commands.Cog):
     async def list_integrations(self, ctx: commands.Context):
         """Various 3rd party integrations for giveaways"""
         try:
-            # Example integration with a fictional Points System
             integration_msg = (
                 "Available Integrations:\n"
                 "- **Points System**: Award points to winners.\n"
@@ -627,7 +663,21 @@ class Giveaways(commands.Cog):
             await ctx.send("Invalid winners value. Please provide an integer.")
         except Exception as e:
             log.error(f"Error adding old giveaway {msg_id}: {str(e)}", exc_info=e)
-            await ctx.send(f"Error adding old giveaway: {str(e)}")
+            await ctx.send(f"Error adding old giveaway: {str(e)}. Fallback created...")
+            fallback_giveaway = Giveaway(
+                guild_id=ctx.guild.id,
+                channel_id=channel.id,
+                message_id=msg_id,
+                end_time=datetime.now(timezone.utc) + timedelta(minutes=1),
+                title=prize or "Fallback Giveaway",
+                emoji="🎉",
+                ended=False,
+                conditions={"winners": winners},
+                host_id=ctx.author.id
+            )
+            self.giveaways[msg_id] = fallback_giveaway
+            await self.save_giveaway(fallback_giveaway)
+            await ctx.send("Fallback giveaway created with minimal settings!")
 
     @giveaway.command(name="add_entrants")
     @commands.has_permissions(manage_guild=True)
