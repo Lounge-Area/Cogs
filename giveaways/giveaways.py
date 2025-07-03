@@ -71,6 +71,7 @@ class Giveaways(commands.Cog):
                 try:
                     if giveaway_data.get("ended", False) and datetime.fromtimestamp(giveaway_data.get("endtime", 0), tz=timezone.utc) < datetime.now(timezone.utc):
                         continue
+                    original_msg_id = giveaway_data.get("original_message_id", int(msg_id))
                     giveaway = Giveaway(
                         guild_id=int(guild_id),
                         channel_id=giveaway_data.get("channelid", 0),
@@ -83,14 +84,12 @@ class Giveaways(commands.Cog):
                         conditions=giveaway_data.get("kwargs", {}),
                         host_id=giveaway_data.get("host_id", 0)
                     )
-                    # Set original_message_id if it exists in config
-                    if "original_message_id" in giveaway_data:
-                        giveaway.original_message_id = giveaway_data["original_message_id"]
-                    else:
-                        giveaway.original_message_id = int(msg_id)
-                    self.giveaways[int(msg_id)] = giveaway
+                    giveaway.original_message_id = original_msg_id
+                    self.giveaways[original_msg_id] = giveaway
+                    if int(msg_id) != original_msg_id:
+                        self.giveaways[int(msg_id)] = giveaway
                     self.bot.add_view(GiveawayView(self))
-                    log.info(f"Loaded giveaway {msg_id} for guild {guild_id}")
+                    log.debug(f"Loaded giveaway - original_msg_id: {original_msg_id}, msg_id: {msg_id}, title: {giveaway.title}")
                 except Exception as exc:
                     log.error(f"Error loading giveaway {msg_id}: ", exc_info=exc)
 
@@ -99,7 +98,8 @@ class Giveaways(commands.Cog):
             if giveaway.is_active() and len(giveaway.entrants) == 0 and datetime.now(timezone.utc) > giveaway.end_time:
                 log.warning(f"Recovering crashed giveaway {msg_id} - no entrants, ending now")
                 await self.draw_winner(giveaway)
-                del self.giveaways[msg_id]
+                if msg_id in self.giveaways:
+                    del self.giveaways[msg_id]
 
     def cog_unload(self) -> None:
         log.info("Unloading giveaways cog...")
@@ -112,7 +112,7 @@ class Giveaways(commands.Cog):
                 "guildid": giveaway.guild_id,
                 "channelid": giveaway.channel_id,
                 "messageid": giveaway.message_id,
-                "original_message_id": getattr(giveaway, 'original_message_id', giveaway.message_id),
+                "original_message_id": giveaway.original_message_id,
                 "title": giveaway.title,
                 "endtime": giveaway.end_time.timestamp(),
                 "emoji": giveaway.emoji,
@@ -122,7 +122,7 @@ class Giveaways(commands.Cog):
                 "host_id": giveaway.host_id
             }
             await self.config.custom(GIVEAWAY_KEY, str(giveaway.guild_id), str(giveaway.original_message_id)).set(giveaway_dict)
-            log.debug(f"Saved giveaway {giveaway.id} to config")
+            log.debug(f"Saved giveaway - original_msg_id: {giveaway.original_message_id}, msg_id: {giveaway.message_id}, title: {giveaway.title}")
 
     async def check_giveaways(self) -> None:
         to_clear = []
@@ -638,7 +638,7 @@ class Giveaways(commands.Cog):
     async def add_old_giveaway(self, ctx: commands.Context, msg_id: int, prize: str, winners: int, ended: str = "False", *, args: str = ""):
         """Add an old giveaway with a specific message ID"""
         try:
-            if msg_id in self.giveaways:
+            if msg_id in self.giveaways and self.giveaways[msg_id].original_message_id == msg_id:
                 await ctx.send("Giveaway with this ID already exists")
                 return
 
@@ -647,7 +647,7 @@ class Giveaways(commands.Cog):
             arguments["winners"] = winners
             ended_bool = ended.lower() in ("true", "1", "yes")
 
-            end_time = datetime.now(timezone.utc) if ended_bool else datetime(2025, 7, 2, 20, 21, tzinfo=timezone.utc)
+            end_time = datetime.now(timezone.utc) if ended_bool else datetime(2025, 7, 2, 22, 11, tzinfo=timezone.utc)  # Adjusted to current date
             giveaway = Giveaway(
                 guild_id=ctx.guild.id,
                 channel_id=channel.id,
@@ -674,15 +674,19 @@ class Giveaways(commands.Cog):
             )
             embed.set_footer(text=f"Reroll: {(await self.bot.get_prefix(ctx))[-1]}gw reroll {msg_id} | Ended at" if ended_bool else "Active")
 
-            # Check if message exists, create new one if not
+            # Attempt to edit the original message if it exists in the correct channel
             try:
-                msg = channel.get_partial_message(msg_id)
+                msg = await channel.fetch_message(msg_id)
                 await msg.edit(content="🎉 Giveaway Ended 🎉" if ended_bool else "🎉 Giveaway 🎉", embed=embed, view=None if ended_bool else GiveawayView(self))
+                log.info(f"Edited existing giveaway message {msg_id} in channel {channel.id}")
             except discord.NotFound:
-                log.warning(f"Message {msg_id} not found, creating new message")
-                msg = await channel.send(content="🎉 Giveaway Ended 🎉" if ended_bool else "🎉 Giveaway 🎉", embed=embed, view=None if ended_bool else GiveawayView(self))
-                giveaway.message_id = msg.id
-                await self.save_giveaway(giveaway)
+                log.warning(f"Original message {msg_id} not found in channel {channel.id}, skipping edit. Please use the correct channel.")
+                await ctx.send(f"Original message {msg_id} not found in this channel. Please run this command in the channel where the original message exists or manually update the giveaway.")
+                return
+            except discord.Forbidden:
+                log.error(f"Bot lacks permission to edit message {msg_id} in channel {channel.id}")
+                await ctx.send("Bot lacks permission to edit the original message.")
+                return
 
             await ctx.send(f"Added old giveaway {msg_id} {'(ended)' if ended_bool else '(active)'}")
             log.info(f"Added old giveaway {msg_id} in guild {ctx.guild.id}")
@@ -736,16 +740,9 @@ class Giveaways(commands.Cog):
 
     def _get_giveaway_by_original_id(self, msg_id: int) -> Optional[Giveaway]:
         """Get a giveaway by its original message ID or current message ID."""
-        # Check if msg_id matches any original_message_id or current message_id
         for giveaway in self.giveaways.values():
-            if (hasattr(giveaway, 'original_message_id') and giveaway.original_message_id == msg_id) or giveaway.message_id == msg_id:
+            if giveaway.original_message_id == msg_id or giveaway.message_id == msg_id:
                 return giveaway
-        # Check config for any giveaway with matching original_message_id
-        guild_data = self.config.custom(GIVEAWAY_KEY, str(giveaway.guild_id)).all() if 'giveaway' in locals() else {}
-        for stored_msg_id, giveaway_data in guild_data.items():
-            if giveaway_data.get("original_message_id", int(stored_msg_id)) == msg_id:
-                if int(stored_msg_id) in self.giveaways:
-                    return self.giveaways[int(stored_msg_id)]
         return None
 
     def generate_settings_text(self, ctx: commands.Context, arguments: Args) -> str:
