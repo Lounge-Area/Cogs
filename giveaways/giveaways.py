@@ -444,18 +444,26 @@ class Giveaways(commands.Cog):
 
     @giveaway.command()
     @commands.has_permissions(manage_guild=True)
-    async def add_entrants(self, ctx: commands.Context, msg_id: int, *user_ids: int):
-        """Add entrants to a giveaway by user IDs"""
+    async def add_entrants(self, ctx: commands.Context, msg_id: int, user_ids: str = ""):
+        """Add entrants to a giveaway by user IDs (comma-separated, e.g., 123,456,789)"""
         try:
             if msg_id not in self.giveaways or self.giveaways[msg_id].guild_id != ctx.guild.id:
                 await ctx.send("Giveaway not found")
                 return
                 
             giveaway = self.giveaways[msg_id]
-            giveaway.add_entrants_by_ids(list(user_ids))
+            # Split the input string and convert to integers
+            ids = [int(uid.strip()) for uid in user_ids.split(",") if uid.strip()]
+            if not ids:
+                await ctx.send("No valid user IDs provided.")
+                return
+                
+            giveaway.add_entrants_by_ids(ids)
             await self.save_giveaway(giveaway)
-            await ctx.send(f"Added {len(user_ids)} entrants to giveaway {msg_id}")
-            log.info(f"Added entrants {user_ids} to giveaway {msg_id} in guild {ctx.guild.id}")
+            await ctx.send(f"Added {len(ids)} entrants to giveaway {msg_id}")
+            log.info(f"Added entrants {ids} to giveaway {msg_id} in guild {ctx.guild.id}")
+        except ValueError:
+            await ctx.send("Invalid user ID format. Please provide IDs as comma-separated numbers (e.g., 123,456).")
         except Exception as e:
             log.error(f"Error adding entrants to giveaway {msg_id}: {str(e)}", exc_info=e)
             await ctx.send(f"Error adding entrants: {str(e)}")
