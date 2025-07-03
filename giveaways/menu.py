@@ -38,7 +38,7 @@ class GiveawayButton(Button):
         giveaway = self.cog.giveaways[interaction.message.id]
         await interaction.response.defer()
         try:
-            giveaway.add_entrant(interaction.user)
+            await giveaway.add_entrant(interaction.user)  # Ensure this is awaited
             await self.cog.save_giveaway(giveaway)
             await interaction.followup.send(
                 f"You have been entered into the giveaway for {giveaway.title}.",

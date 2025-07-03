@@ -12,6 +12,7 @@ from redbot.core import commands, Config
 from redbot.core.commands.converter import TimedeltaConverter
 from redbot.core.utils.chat_formatting import pagify
 from redbot.core.utils.menus import DEFAULT_CONTROLS, menu
+from .objects import Giveaway
 from .menu import GiveawayView, GiveawayButton
 from .converter import Args
 
@@ -31,163 +32,6 @@ class GiveawayEnterError(GiveawayError):
 
 class AlreadyEnteredError(GiveawayError):
     pass
-
-class Giveaway:
-    def __init__(
-        self,
-        guild_id: int,
-        channel_id: int,
-        message_id: int,
-        title: str,
-        description: str,
-        winner_count: int,
-        duration_minutes: float,
-        conditions: dict,
-        emoji: str = "🎉",
-        host_id: int = None,
-        ended: bool = False,
-        entrants: Set[int] = None
-    ):
-        if not title or len(title.strip()) == 0:
-            raise GiveawayValidationError("Title cannot be empty")
-        if winner_count < 1:
-            raise GiveawayValidationError("Winner count must be at least 1")
-        if duration_minutes <= 0 and not ended:
-            raise GiveawayValidationError("Duration must be greater than 0 minutes for active giveaways")
-        if not isinstance(guild_id, int) or not isinstance(channel_id, int) or not isinstance(message_id, int):
-            raise GiveawayValidationError("Invalid guild, channel, or message ID")
-        
-        self.id = str(message_id)  # Use message ID as giveaway ID
-        self.guild_id = guild_id
-        self.channel_id = channel_id
-        self.message_id = message_id
-        self.title = title.strip()
-        self.description = description.strip() if description else ""
-        self.winner_count = winner_count
-        self.start_time = datetime.now(timezone.utc) if not ended else datetime.fromtimestamp(0, tz=timezone.utc)
-        self.end_time = self.start_time + TimedeltaConverter().convert(None, f"{duration_minutes}m") if not ended else datetime.now(timezone.utc)
-        self.conditions = conditions or {}
-        self.emoji = emoji
-        self.host_id = host_id
-        self.entrants: Set[int] = set(entrants) if entrants else set()
-        self.winners: List[int] = []
-        self.ended = ended
-        self._lock = Lock()
-        
-        log.info(f"Created giveaway {self.id} with title '{self.title}' in guild {self.guild_id}")
-
-    def add_entrant(self, user: discord.Member) -> None:
-        with self._lock:
-            if self.ended:
-                raise GiveawayEnterError("Giveaway has ended")
-            if not self.conditions.get("multientry", False) and user.id in self.entrants:
-                raise AlreadyEnteredError("You have already entered this giveaway")
-            
-            if not self._check_conditions(user):
-                raise GiveawayEnterError("You do not meet the giveaway entry conditions")
-            
-            self.entrants.add(user.id)
-            log.debug(f"Added entrant {user.id} to giveaway {self.id}")
-
-    def remove_entrant(self, user_id: int) -> None:
-        with self._lock:
-            if user_id in self.entrants:
-                self.entrants.remove(user_id)
-                log.debug(f"Removed entrant {user_id} from giveaway {self.id}")
-
-    def add_entrants_by_ids(self, user_ids: List[int]) -> None:
-        with self._lock:
-            if self.ended:
-                raise GiveawayError("Cannot add entrants to an ended giveaway")
-            for user_id in user_ids:
-                if user_id not in self.entrants and self._validate_entrant(user_id):
-                    self.entrants.add(user_id)
-            log.debug(f"Manually added entrants {user_ids} to giveaway {self.id}")
-
-    def _validate_entrant(self, user_id: int) -> bool:
-        # Simplified validation (in practice, check guild membership)
-        return True  # Assume valid for manual addition; add more checks if needed
-
-    def draw_winners(self) -> List[int]:
-        with self._lock:
-            if self.ended:
-                raise GiveawayError("Giveaway has already ended")
-            if len(self.entrants) < self.winner_count:
-                log.warning(f"Not enough entrants for giveaway {self.id}. Needed {self.winner_count}, got {len(self.entrants)}")
-                return []
-            
-            weighted_entrants = []
-            for entrant in self.entrants:
-                multiplier = self._get_entrant_multiplier(entrant)
-                weighted_entrants.extend([entrant] * multiplier)
-                
-            self.winners = random.sample(weighted_entrants, min(self.winner_count, len(weighted_entrants)))
-            self.ended = True
-            log.info(f"Drew {len(self.winners)} winners for giveaway {self.id}: {self.winners}")
-            return self.winners
-
-    def _check_conditions(self, user: discord.Member) -> bool:
-        try:
-            if self.conditions.get("roles"):
-                if not any(role_id in [r.id for r in user.roles] for role_id in self.conditions["roles"]):
-                    return False
-            
-            if self.conditions.get("blacklist"):
-                if any(role_id in [r.id for r in user.roles] for role_id in self.conditions["blacklist"]):
-                    return False
-            
-            if self.conditions.get("joined_days"):
-                join_days = (datetime.now(timezone.utc) - user.joined_at.replace(tzinfo=timezone.utc)).days
-                if join_days < self.conditions["joined_days"]:
-                    return False
-            
-            if self.conditions.get("account_age_days"):
-                account_days = (datetime.now(timezone.utc) - user.created_at.replace(tzinfo=timezone.utc)).days
-                if account_days < self.conditions["account_age_days"]:
-                    return False
-            
-            return self._check_bypass_roles(user)
-        except Exception as e:
-            log.error(f"Error checking conditions for user {user.id} in giveaway {self.id}: {str(e)}")
-            return False
-
-    def _check_bypass_roles(self, user: discord.Member) -> bool:
-        bypass_roles = self.conditions.get("bypass_roles", [])
-        if not bypass_roles:
-            return True
-        
-        bypass_type = self.conditions.get("bypass_type", "or")
-        user_role_ids = {r.id for r in user.roles}
-        
-        if bypass_type == "and":
-            return all(role_id in user_role_ids for role_id in bypass_roles)
-        return any(role_id in user_role_ids for role_id in bypass_roles)
-
-    def _get_entrant_multiplier(self, user_id: int) -> int:
-        multiplier = self.conditions.get("multiplier", 1)
-        multi_roles = self.conditions.get("multi_roles", [])
-        if not multi_roles:
-            return 1
-        
-        # Simplified; in practice, fetch member to check roles
-        return multiplier if any(True for _ in multi_roles) else 1
-
-    def is_active(self) -> bool:
-        with self._lock:
-            return not self.ended and datetime.now(timezone.utc) < self.end_time
-
-    def get_status(self) -> dict:
-        with self._lock:
-            return {
-                "id": self.id,
-                "title": self.title,
-                "description": self.description,
-                "entrants_count": len(self.entrants),
-                "winners": self.winners,
-                "end_time": self.end_time.isoformat(),
-                "is_active": self.is_active(),
-                "winner_count": self.winner_count
-            }
 
 class Giveaways(commands.Cog):
     """Giveaway Commands"""
@@ -232,17 +76,14 @@ class Giveaways(commands.Cog):
                         guild_id=int(guild_id),
                         channel_id=giveaway_data["channelid"],
                         message_id=int(msg_id),
+                        end_time=datetime.fromtimestamp(giveaway_data["endtime"], tz=timezone.utc),
                         title=giveaway_data["title"],
-                        description=giveaway_data.get("description", ""),
-                        winner_count=giveaway_data.get("winners", 1),
-                        duration_minutes=0,  # Loaded from config, not recalculated
-                        conditions=giveaway_data.get("kwargs", {}),
                         emoji=giveaway_data.get("emoji", "🎉"),
-                        host_id=giveaway_data.get("host_id"),
+                        entrants=set(giveaway_data.get("entrants", [])),
                         ended=giveaway_data.get("ended", False),
-                        entrants=set(giveaway_data.get("entrants", []))
+                        conditions=giveaway_data.get("kwargs", {}),
+                        host_id=giveaway_data.get("host_id")
                     )
-                    giveaway.end_time = datetime.fromtimestamp(giveaway_data["endtime"], tz=timezone.utc)
                     self.giveaways[int(msg_id)] = giveaway
                     self.bot.add_view(GiveawayView(self))
                     log.info(f"Loaded giveaway {msg_id} for guild {guild_id}")
@@ -268,14 +109,12 @@ class Giveaways(commands.Cog):
                 "channelid": giveaway.channel_id,
                 "messageid": giveaway.message_id,
                 "title": giveaway.title,
-                "description": giveaway.description,
                 "endtime": giveaway.end_time.timestamp(),
-                "winners": giveaway.winner_count,
-                "entrants": list(giveaway.entrants),
                 "emoji": giveaway.emoji,
+                "entrants": list(giveaway.entrants),
+                "ended": giveaway.ended,
                 "kwargs": giveaway.conditions,
-                "host_id": giveaway.host_id,
-                "ended": giveaway.ended
+                "host_id": giveaway.host_id
             }
             await self.config.custom(GIVEAWAY_KEY, str(giveaway.guild_id), str(giveaway.message_id)).set(giveaway_dict)
             log.debug(f"Saved giveaway {giveaway.id} to config")
@@ -315,7 +154,7 @@ class Giveaways(commands.Cog):
                 winner_objs = [guild.get_member(w) for w in winners if guild.get_member(w)]
 
             embed = discord.Embed(
-                title=f"{f'{giveaway.winner_count}x ' if giveaway.winner_count > 1 else ''}{giveaway.title}",
+                title=f"{f'{giveaway.conditions.get('winners', 1)}x ' if giveaway.conditions.get('winners', 1) > 1 else ''}{giveaway.title}",
                 description=f"Winner(s):\n{winner_text}",
                 color=discord.Color.blue(),
                 timestamp=datetime.now(timezone.utc)
@@ -328,7 +167,7 @@ class Giveaways(commands.Cog):
             if giveaway.conditions.get("announce") and winner_objs:
                 announce_embed = discord.Embed(
                     title="Giveaway Ended",
-                    description=f"Congratulations to the {f'{giveaway.winner_count} ' if giveaway.winner_count > 1 else ''}winner{'s' if giveaway.winner_count > 1 else ''} of [{giveaway.title}]({msg.jump_url}).\n{winner_text}",
+                    description=f"Congratulations to the {f'{giveaway.conditions.get('winners', 1)} ' if giveaway.conditions.get('winners', 1) > 1 else ''}winner{'s' if giveaway.conditions.get('winners', 1) > 1 else ''} of [{giveaway.title}]({msg.jump_url}).\n{winner_text}",
                     color=discord.Color.blue()
                 )
                 await channel.send(
@@ -374,21 +213,22 @@ class Giveaways(commands.Cog):
             channel = channel or ctx.channel
             duration_minutes = time.total_seconds() / 60
             
+            start_time = datetime.now(timezone.utc)
+            end_time = start_time + TimedeltaConverter().convert(None, f"{duration_minutes}m")
             giveaway = Giveaway(
                 guild_id=ctx.guild.id,
                 channel_id=channel.id,
                 message_id=0,  # Will be set after message is sent
+                end_time=end_time,
                 title=prize,
-                description="",
-                winner_count=winners,
-                duration_minutes=duration_minutes,
-                conditions={},
+                emoji="🎉",
+                conditions={"winners": winners},
                 host_id=ctx.author.id
             )
             
             embed = discord.Embed(
                 title=prize,
-                description=f"Click the button to enter\n\n**Hosted by:** {ctx.author.mention}\nEnds: <t:{int(giveaway.end_time.timestamp())}:R>",
+                description=f"Click the button to enter\n\n**Hosted by:** {ctx.author.mention}\nEnds: <t:{int(end_time.timestamp())}:R>",
                 color=discord.Color.blue()
             )
             
@@ -427,16 +267,16 @@ class Giveaways(commands.Cog):
             duration = arguments["duration"]
             duration_minutes = duration.total_seconds() / 60
             
+            start_time = datetime.now(timezone.utc)
+            end_time = start_time + duration
             giveaway = Giveaway(
                 guild_id=ctx.guild.id,
                 channel_id=channel.id,
                 message_id=0,
+                end_time=end_time,
                 title=arguments["prize"],
-                description=arguments.get("description", ""),
-                winner_count=arguments.get("winners", 1),
-                duration_minutes=duration_minutes,
-                conditions=arguments,
                 emoji=arguments.get("emoji", "🎉"),
+                conditions=arguments,
                 host_id=arguments.get("hosted-by", ctx.author.id)
             )
             
@@ -445,8 +285,8 @@ class Giveaways(commands.Cog):
                 description += "\n\n**Requirements:**\n" + self.generate_settings_text(ctx, arguments)
             
             embed = discord.Embed(
-                title=f"{f'{giveaway.winner_count}x ' if giveaway.winner_count > 1 else ''}{giveaway.title}",
-                description=f"{description}\n\nClick the button to enter\n\n**Hosted by:** {ctx.guild.get_member(giveaway.host_id).mention}\nEnds: <t:{int(giveaway.end_time.timestamp())}:R>",
+                title=f"{f'{giveaway.conditions.get('winners', 1)}x ' if giveaway.conditions.get('winners', 1) > 1 else ''}{giveaway.title}",
+                description=f"{description}\n\nClick the button to enter\n\n**Hosted by:** {ctx.guild.get_member(giveaway.host_id).mention}\nEnds: <t:{int(end_time.timestamp())}:R>",
                 color=arguments.get("colour", discord.Color.blue())
             )
             
@@ -534,14 +374,12 @@ class Giveaways(commands.Cog):
                 guild_id=ctx.guild.id,
                 channel_id=giveaway_data["channelid"],
                 message_id=msg_id,
+                end_time=datetime.now(timezone.utc),  # Set to now for reroll
                 title=giveaway_data["title"],
-                description=giveaway_data.get("description", ""),
-                winner_count=giveaway_data.get("winners", 1),
-                duration_minutes=1,
-                conditions=giveaway_data.get("kwargs", {}),
                 emoji=giveaway_data.get("emoji", "🎉"),
+                entrants=set(giveaway_data.get("entrants", [])),
                 ended=False,
-                entrants=set(giveaway_data.get("entrants", []))
+                conditions=giveaway_data.get("kwargs", {})
             )
             await self.draw_winner(giveaway)
             await ctx.tick()
@@ -560,22 +398,22 @@ class Giveaways(commands.Cog):
                 return
             
             channel = ctx.channel
-            arguments = Args().convert(ctx, args) if args else {}
-            duration_minutes = 0 if ended else (datetime.now(timezone.utc) - datetime(2025, 7, 2, 20, 21, tzinfo=timezone.utc)).total_seconds() / 60  # Default to yesterday if not ended
+            arguments = await Args().convert(ctx, args) if args else {}
+            arguments["winners"] = winners
+            
+            yesterday = datetime(2025, 7, 2, 20, 21, tzinfo=timezone.utc)  # Default to yesterday 20:21 CEST
+            end_time = datetime.now(timezone.utc) if ended else yesterday
             
             giveaway = Giveaway(
                 guild_id=ctx.guild.id,
                 channel_id=channel.id,
                 message_id=msg_id,
+                end_time=end_time,
                 title=prize,
-                description=arguments.get("description", ""),
-                winner_count=winners,
-                duration_minutes=duration_minutes,
-                conditions=arguments,
                 emoji=arguments.get("emoji", "🎉"),
-                host_id=arguments.get("hosted-by", ctx.author.id),
                 ended=ended,
-                entrants=set()
+                conditions=arguments,
+                host_id=arguments.get("hosted-by", ctx.author.id)
             )
             
             self.giveaways[msg_id] = giveaway
@@ -583,7 +421,7 @@ class Giveaways(commands.Cog):
             
             embed = discord.Embed(
                 title=f"{f'{winners}x ' if winners > 1 else ''}{prize}",
-                description=f"Winner(s): {'N/A' if not ended else 'No winners (not enough entrants)'}\nEnds: <t:{int(giveaway.end_time.timestamp())}:R>",
+                description=f"Winner(s): {'N/A' if not ended else 'No winners (not enough entrants)'}\nEnds: <t:{int(end_time.timestamp())}:R>",
                 color=discord.Color.blue(),
                 timestamp=datetime.now(timezone.utc) if ended else None
             )
@@ -676,7 +514,7 @@ class Giveaways(commands.Cog):
                     msg += f"**{key.title()}:** {value}\n"
                     
             embed = discord.Embed(
-                title=f"{f'{giveaway.winner_count}x ' if giveaway.winner_count > 1 else ''}{giveaway.title}",
+                title=f"{f'{giveaway.conditions.get('winners', 1)}x ' if giveaway.conditions.get('winners', 1) > 1 else ''}{giveaway.title}",
                 description=msg,
                 color=discord.Color.blue()
             )
