@@ -83,6 +83,11 @@ class Giveaways(commands.Cog):
                         conditions=giveaway_data.get("kwargs", {}),
                         host_id=giveaway_data.get("host_id", 0)
                     )
+                    # Set original_message_id if it exists in config
+                    if "original_message_id" in giveaway_data:
+                        giveaway.original_message_id = giveaway_data["original_message_id"]
+                    else:
+                        giveaway.original_message_id = int(msg_id)
                     self.giveaways[int(msg_id)] = giveaway
                     self.bot.add_view(GiveawayView(self))
                     log.info(f"Loaded giveaway {msg_id} for guild {guild_id}")
@@ -107,6 +112,7 @@ class Giveaways(commands.Cog):
                 "guildid": giveaway.guild_id,
                 "channelid": giveaway.channel_id,
                 "messageid": giveaway.message_id,
+                "original_message_id": getattr(giveaway, 'original_message_id', giveaway.message_id),
                 "title": giveaway.title,
                 "endtime": giveaway.end_time.timestamp(),
                 "emoji": giveaway.emoji,
@@ -115,7 +121,7 @@ class Giveaways(commands.Cog):
                 "kwargs": giveaway.conditions,
                 "host_id": giveaway.host_id
             }
-            await self.config.custom(GIVEAWAY_KEY, str(giveaway.guild_id), str(giveaway.message_id)).set(giveaway_dict)
+            await self.config.custom(GIVEAWAY_KEY, str(giveaway.guild_id), str(giveaway.original_message_id)).set(giveaway_dict)
             log.debug(f"Saved giveaway {giveaway.id} to config")
 
     async def check_giveaways(self) -> None:
@@ -160,9 +166,8 @@ class Giveaways(commands.Cog):
                 color=discord.Color.blue(),
                 timestamp=datetime.now(timezone.utc)
             )
-            # Use a default prefix if guild is unavailable
             prefix = (await self.bot.get_prefix(guild))[-1] if guild else "!"
-            embed.set_footer(text=f"Reroll: {prefix}gw reroll {giveaway.message_id} | Ended at")
+            embed.set_footer(text=f"Reroll: {prefix}gw reroll {giveaway.original_message_id} | Ended at")
             
             msg = channel.get_partial_message(giveaway.message_id)
             try:
@@ -234,6 +239,7 @@ class Giveaways(commands.Cog):
                 conditions={"winners": winners},
                 host_id=ctx.author.id
             )
+            giveaway.original_message_id = 0  # Will be set after message creation
             
             embed = discord.Embed(
                 title=prize,
@@ -244,6 +250,7 @@ class Giveaways(commands.Cog):
             view = GiveawayView(self)
             msg = await channel.send(embed=embed)
             giveaway.message_id = msg.id
+            giveaway.original_message_id = msg.id
             
             view.add_item(GiveawayButton(
                 label="Join Giveaway",
@@ -277,6 +284,7 @@ class Giveaways(commands.Cog):
                 conditions={"winners": 1},
                 host_id=ctx.author.id
             )
+            fallback_giveaway.original_message_id = fallback_giveaway.message_id
             self.giveaways[fallback_giveaway.message_id] = fallback_giveaway
             await self.save_giveaway(fallback_giveaway)
             await ctx.send("Fallback giveaway created with minimal settings!")
@@ -305,6 +313,7 @@ class Giveaways(commands.Cog):
                 conditions=arguments,
                 host_id=arguments.get("hosted-by", ctx.author.id)
             )
+            giveaway.original_message_id = 0  # Will be set after message creation
 
             description = arguments.get("description", "")
             if arguments.get("show_requirements"):
@@ -344,6 +353,7 @@ class Giveaways(commands.Cog):
             )
 
             giveaway.message_id = msg.id
+            giveaway.original_message_id = msg.id
             view.add_item(GiveawayButton(
                 label=arguments.get("button-text", "Join Giveaway"),
                 style=arguments.get("button-style", discord.ButtonStyle.green),
@@ -378,6 +388,7 @@ class Giveaways(commands.Cog):
             )
             msg = await channel.send(content="🎉 Fallback Giveaway 🎉", embed=discord.Embed(title="Fallback Giveaway", description="Click to enter\nEnds: <t:0:R>"))
             fallback_giveaway.message_id = msg.id
+            fallback_giveaway.original_message_id = msg.id
             self.giveaways[msg.id] = fallback_giveaway
             await self.save_giveaway(fallback_giveaway)
             await ctx.send("Fallback giveaway created with minimal settings!")
@@ -387,11 +398,11 @@ class Giveaways(commands.Cog):
     async def edit_giveaway(self, ctx: commands.Context, msg_id: int, *, arguments: Args):
         """Edit a giveaway"""
         try:
-            if msg_id not in self.giveaways or self.giveaways[msg_id].guild_id != ctx.guild.id:
+            giveaway = self._get_giveaway_by_original_id(msg_id)
+            if not giveaway or giveaway.guild_id != ctx.guild.id:
                 await ctx.send("Giveaway not found")
                 return
 
-            giveaway = self.giveaways[msg_id]
             with giveaway._lock:
                 if arguments.get("prize"):
                     giveaway.title = arguments["prize"]
@@ -431,13 +442,14 @@ class Giveaways(commands.Cog):
     async def end_giveaway(self, ctx: commands.Context, msg_id: int):
         """End a giveaway early"""
         try:
-            if msg_id not in self.giveaways or self.giveaways[msg_id].guild_id != ctx.guild.id:
+            giveaway = self._get_giveaway_by_original_id(msg_id)
+            if not giveaway or giveaway.guild_id != ctx.guild.id:
                 await ctx.send("Giveaway not found")
                 return
 
-            giveaway = self.giveaways[msg_id]
             await self.draw_winner(giveaway)
-            del self.giveaways[msg_id]
+            if giveaway.message_id in self.giveaways:
+                del self.giveaways[giveaway.message_id]
             await ctx.tick()
             log.info(f"Manually ended giveaway {giveaway.id} in guild {ctx.guild.id}")
         except Exception as e:
@@ -449,11 +461,11 @@ class Giveaways(commands.Cog):
     async def list_entrants(self, ctx: commands.Context, msg_id: int):
         """List all entrants for a giveaway"""
         try:
-            if msg_id not in self.giveaways:
+            giveaway = self._get_giveaway_by_original_id(msg_id)
+            if not giveaway:
                 await ctx.send("Giveaway not found")
                 return
 
-            giveaway = self.giveaways[msg_id]
             if not giveaway.entrants:
                 await ctx.send("No entrants")
                 return
@@ -511,12 +523,11 @@ class Giveaways(commands.Cog):
     async def giveaway_info(self, ctx: commands.Context, msg_id: int):
         """Information about a giveaway"""
         try:
-            if msg_id not in self.giveaways:
+            giveaway = self._get_giveaway_by_original_id(msg_id)
+            if not giveaway:
                 await ctx.send("Giveaway not found")
                 return
 
-            giveaway = self.giveaways[msg_id]
-            # Use a timeout to prevent deadlock
             lock_acquired = await asyncio.to_thread(lambda: giveaway._lock.acquire(timeout=5))
             if not lock_acquired:
                 await ctx.send("Could not acquire lock for giveaway info, try again later.")
@@ -614,6 +625,7 @@ class Giveaways(commands.Cog):
                 ended=False,
                 conditions=giveaway_data.get("kwargs", {})
             )
+            giveaway.original_message_id = int(msg_id)
             await self.draw_winner(giveaway)
             await ctx.tick()
             log.info(f"Rerolled giveaway {msg_id} in guild {ctx.guild.id}")
@@ -647,6 +659,7 @@ class Giveaways(commands.Cog):
                 conditions=arguments,
                 host_id=arguments.get("hosted-by", ctx.author.id)
             )
+            giveaway.original_message_id = msg_id
 
             self.giveaways[msg_id] = giveaway
             await self.save_giveaway(giveaway)
@@ -689,6 +702,7 @@ class Giveaways(commands.Cog):
                 conditions={"winners": winners},
                 host_id=ctx.author.id
             )
+            fallback_giveaway.original_message_id = msg_id
             msg = await channel.send(content="🎉 Fallback Giveaway 🎉", embed=discord.Embed(title="Fallback Giveaway", description="Click to enter\nEnds: <t:0:R>"))
             fallback_giveaway.message_id = msg.id
             self.giveaways[msg.id] = fallback_giveaway
@@ -700,11 +714,11 @@ class Giveaways(commands.Cog):
     async def add_entrants_giveaway(self, ctx: commands.Context, msg_id: int, user_ids: str = ""):
         """Add entrants to a giveaway by user IDs (comma-separated, e.g., 123,456,789)"""
         try:
-            if msg_id not in self.giveaways or self.giveaways[msg_id].guild_id != ctx.guild.id:
+            giveaway = self._get_giveaway_by_original_id(msg_id)
+            if not giveaway or giveaway.guild_id != ctx.guild.id:
                 await ctx.send("Giveaway not found")
                 return
 
-            giveaway = self.giveaways[msg_id]
             ids = [int(uid.strip()) for uid in user_ids.split(",") if uid.strip()]
             if not ids:
                 await ctx.send("No valid user IDs provided.")
@@ -719,6 +733,20 @@ class Giveaways(commands.Cog):
         except Exception as e:
             log.error(f"Error adding entrants to giveaway {msg_id}: {str(e)}", exc_info=e)
             await ctx.send(f"Error adding entrants: {str(e)}")
+
+    def _get_giveaway_by_original_id(self, msg_id: int) -> Optional[Giveaway]:
+        """Get a giveaway by its original message ID or current message ID."""
+        # Check if msg_id matches any original_message_id or current message_id
+        for giveaway in self.giveaways.values():
+            if (hasattr(giveaway, 'original_message_id') and giveaway.original_message_id == msg_id) or giveaway.message_id == msg_id:
+                return giveaway
+        # Check config for any giveaway with matching original_message_id
+        guild_data = self.config.custom(GIVEAWAY_KEY, str(giveaway.guild_id)).all() if 'giveaway' in locals() else {}
+        for stored_msg_id, giveaway_data in guild_data.items():
+            if giveaway_data.get("original_message_id", int(stored_msg_id)) == msg_id:
+                if int(stored_msg_id) in self.giveaways:
+                    return self.giveaways[int(stored_msg_id)]
+        return None
 
     def generate_settings_text(self, ctx: commands.Context, arguments: Args) -> str:
         settings = []
