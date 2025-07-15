@@ -38,9 +38,10 @@ class CleanupGiveaways(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        self.config = Config.get_conf(self, identifier=874783520, force_registration=True)
-        # Register the custom GIVEAWAY group
-        self.config.register_custom(GIVEAWAY_KEY)
+        # Use the same identifier as the giveaways cog to share the Config
+        self.config = Config.get_conf(None, identifier=874783520, cog_name="Giveaways", force_registration=True)
+        # Register the custom GIVEAWAY group with a default structure
+        self.config.register_custom(GIVEAWAY_KEY, **{})
 
     async def init(self) -> None:
         """Initialize the SQLite database for giveaways."""
