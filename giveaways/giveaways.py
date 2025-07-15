@@ -438,7 +438,7 @@ class Giveaways(commands.Cog):
                 return await ctx.send("Giveaway not found.")
             try:
                 await self.draw_winner(self.giveaways[msgid])
-                del self.giveaways[msgid]
+                #del self.giveaways[msgid]
                 gw = await self.config.custom(GIVEAWAY_KEY, str(ctx.guild.id), str(msgid)).all()
                 gw["ended"] = True
                 await self.config.custom(GIVEAWAY_KEY, str(ctx.guild.id), str(msgid)).set(gw)
