@@ -1,5 +1,6 @@
 import argparse
 from datetime import datetime, timezone
+
 import dateparser
 from discord.ext.commands.converter import (
     ColourConverter,
@@ -10,21 +11,24 @@ from discord.ext.commands.converter import (
 )
 from redbot.core.commands import BadArgument, Converter
 from redbot.core.commands.converter import TimedeltaConverter
+
 from .menu import BUTTON_STYLE
+
 
 class NoExitParser(argparse.ArgumentParser):
     def error(self, message):
         raise BadArgument()
 
+
 class Args(Converter):
     async def convert(self, ctx, argument):
         argument = argument.replace("—", "--")
-        parser = NoExitParser(description="Giveaway Creation", add_help=False)
+        parser = NoExitParser(description="Giveaway Created", add_help=False)
 
         # Required Arguments
+
         parser.add_argument("--prize", "--p", dest="prize", nargs="*", default=[])
-        parser.add_argument("--winners", dest="winners", default=1, type=int, nargs="?")
-        parser.add_argument("--description", dest="description", default=[], nargs="*")
+
         timer = parser.add_mutually_exclusive_group()
         timer.add_argument("--duration", "--d", dest="duration", nargs="*", default=[])
         timer.add_argument("--end", "--e", dest="end", nargs="*", default=[])
@@ -32,12 +36,14 @@ class Args(Converter):
         # Optional Arguments
         parser.add_argument("--channel", dest="channel", default=None, nargs="?")
         parser.add_argument("--roles", "--r", "--restrict", dest="roles", nargs="*", default=[])
-        parser.add_argument("--multiplier", "--m", dest="multiplier", default=None, type=int, nargs="?")
-        parser.add_argument("--multi-roles", "--mr", nargs="*", dest="multi_roles", default=[])
-        parser.add_argument("--joined", dest="joined_days", default=None, type=int, nargs="?")
-        parser.add_argument("--created", dest="account_age_days", default=None, type=int, nargs="?")
+        parser.add_argument("--multiplier", "--m", dest="multi", default=None, type=int, nargs="?")
+        parser.add_argument("--multi-roles", "--mr", nargs="*", dest="multi-roles", default=[])
+        parser.add_argument("--joined", dest="joined", default=None, type=int, nargs="?")
+        parser.add_argument("--created", dest="created", default=None, type=int, nargs="?")
         parser.add_argument("--blacklist", dest="blacklist", nargs="*", default=[])
+        parser.add_argument("--winners", dest="winners", default=None, type=int, nargs="?")
         parser.add_argument("--mentions", dest="mentions", nargs="*", default=[])
+        parser.add_argument("--description", dest="description", default=[], nargs="*")
         parser.add_argument("--button-text", dest="button-text", default=[], nargs="*")
         parser.add_argument("--button-style", dest="button-style", default=[], nargs="*")
         parser.add_argument("--emoji", dest="emoji", default=None, nargs="*")
@@ -45,10 +51,9 @@ class Args(Converter):
         parser.add_argument("--thumbnail", dest="thumbnail", default=None, nargs="*")
         parser.add_argument("--hosted-by", dest="hosted-by", default=None, nargs="*")
         parser.add_argument("--colour", dest="colour", default=None, nargs="*")
-        parser.add_argument("--bypass-roles", nargs="*", dest="bypass_roles", default=[])
-        parser.add_argument("--bypass-type", dest="bypass_type", default=None, nargs="?")
-
-        # Setting Arguments
+        parser.add_argument("--bypass-roles", nargs="*", dest="bypass-roles", default=[])
+        parser.add_argument("--bypass-type", dest="bypass-type", default=None, nargs="?")
+        # Setting arguments
         parser.add_argument("--multientry", action="store_true")
         parser.add_argument("--notify", action="store_true")
         parser.add_argument("--congratulate", action="store_true")
@@ -58,58 +63,79 @@ class Args(Converter):
         parser.add_argument("--show-requirements", action="store_true")
         parser.add_argument("--update-button", action="store_true")
 
+        # Integrations
+        parser.add_argument("--cost", dest="cost", default=None, type=int, nargs="?")
+        parser.add_argument("--level-req", dest="levelreq", default=None, type=int, nargs="?")
+        parser.add_argument("--rep-req", dest="repreq", default=None, type=int, nargs="?")
+        parser.add_argument("--tatsu-level", default=None, type=int, nargs="?")
+        parser.add_argument("--tatsu-rep", default=None, type=int, nargs="?")
+        parser.add_argument("--mee6-level", default=None, type=int, nargs="?")
+        parser.add_argument("--amari-level", default=None, type=int, nargs="?")
+        parser.add_argument("--amari-weekly-xp", default=None, type=int, nargs="?")
+
         try:
             vals = vars(parser.parse_args(argument.split(" ")))
         except Exception as error:
-            raise BadArgument("Could not parse flags correctly, ensure flags are correctly used.") from error
+            raise BadArgument(
+                "Could not parse flags correctly, ensure flags are correctly used."
+            ) from error
 
         if not vals["prize"]:
-            raise BadArgument("You must specify a prize. Use `--prize` or `-p`")
-        if not any([vals["duration"], vals["end"]]) and not ctx.command.name == "add_old":
-            raise BadArgument("You must specify a duration or end date. Use `--duration` or `-d` or `--end` or `-e`")
+            raise BadArgument("You must specify a prize. Use `--prize` or `-p`")  #
 
-        nums = [vals["winners"], vals["joined_days"], vals["account_age_days"]]
+        if not any([vals["duration"], vals["end"]]):
+            raise BadArgument(
+                "You must specify a duration or end date. Use `--duration` or `-d` or `--end` or `-e`"
+            )
+
+        nums = [vals["cost"], vals["joined"], vals["created"], vals["winners"]]
         for val in nums:
             if val is None:
                 continue
             if val < 1:
                 raise BadArgument("Number must be greater than 0")
 
-        valid_roles = []
-        for role in vals["roles"]:
-            try:
-                role = await RoleConverter().convert(ctx, role)
-                valid_roles.append(role.id)
-            except BadArgument:
-                raise BadArgument(f"The role {role} does not exist within this server.")
-        vals["roles"] = valid_roles
-
         valid_multi_roles = []
-        for role in vals["multi_roles"]:
+        for role in vals["multi-roles"]:
             try:
                 role = await RoleConverter().convert(ctx, role)
                 valid_multi_roles.append(role.id)
             except BadArgument:
                 raise BadArgument(f"The role {role} does not exist within this server.")
-        vals["multi_roles"] = valid_multi_roles
+        vals["multi-roles"] = valid_multi_roles
 
         valid_bypass_roles = []
-        for role in vals["bypass_roles"]:
+        for role in vals["bypass-roles"]:
             try:
                 role = await RoleConverter().convert(ctx, role)
                 valid_bypass_roles.append(role.id)
             except BadArgument:
                 raise BadArgument(f"The role {role} does not exist within this server.")
-        vals["bypass_roles"] = valid_bypass_roles
+        vals["bypass-roles"] = valid_bypass_roles
 
-        valid_blacklist = []
+        if vals["bypass-type"]:
+            if vals["bypass-type"] not in ["or", "and"]:
+                raise BadArgument("Bypass type must be either `or` or `and` - default is `or`")
+        else:
+            vals["bypass-type"] = "or"
+
+        valid_exclusive_roles = []
+        for role in vals["roles"]:
+            try:
+                role = await RoleConverter().convert(ctx, role)
+                valid_exclusive_roles.append(role.id)
+            except BadArgument:
+                raise BadArgument(f"The role {role} does not exist within this server.")
+        vals["roles"] = valid_exclusive_roles
+
+        valid_blacklist_roles = []
         for role in vals["blacklist"]:
             try:
                 role = await RoleConverter().convert(ctx, role)
-                valid_blacklist.append(role.id)
+                valid_blacklist_roles.append(role.id)
             except BadArgument:
                 raise BadArgument(f"The role {role} does not exist within this server.")
-        vals["blacklist"] = valid_blacklist
+        vals["blacklist"] = valid_blacklist_roles
 
         valid_mentions = []
         for role in vals["mentions"]:
@@ -126,14 +152,42 @@ class Args(Converter):
             except BadArgument:
                 raise BadArgument("Invalid channel.")
 
-        if vals["bypass_type"] and vals["bypass_type"] not in ["or", "and"]:
-            raise BadArgument("Bypass type must be either `or` or `and` - default is `or`")
+        if vals["levelreq"] or vals["repreq"]:
+            cog = ctx.bot.get_cog("Leveler")
+            if not cog:
+                raise BadArgument("Leveler cog not loaded.")
+            if not hasattr(cog, "db"):
+                raise BadArgument(
+                    "This may be the wrong leveling cog. Ensure you are using Fixators."
+                )
 
-        if (vals["multiplier"] or vals["multi_roles"]) and not (vals["multiplier"] and vals["multi_roles"]):
-            raise BadArgument("You must specify both multiplier and multi-roles.")
+        if vals["tatsu_level"] or vals["tatsu_rep"]:
+            token = await ctx.bot.get_shared_api_tokens("tatsumaki")
+            if not token.get("authorization"):
+                raise BadArgument(
+                    f"You do not have a valid Tatsumaki API token. Check `{ctx.clean_prefix}gw integrations` for more info."
+                )
 
-        if (vals["ateveryone"] or vals["athere"]) and not ctx.channel.permissions_for(ctx.me).mention_everyone:
-            raise BadArgument("Bot requires Mention Everyone permission for @everyone or @here.")
+        if vals["amari_level"] or vals["amari_weekly_xp"]:
+            token = await ctx.bot.get_shared_api_tokens("amari")
+            if not token.get("authorization"):
+                raise BadArgument(
+                    f"You do not have a valid Amari API token. Check `{ctx.clean_prefix}gw integrations` for more info."
+                )
+
+        if (vals["multi"] or vals["multi-roles"]) and not (vals["multi"] and vals["multi-roles"]):
+            raise BadArgument(
+                "You must specify a multiplier and roles. Use `--multiplier` or `-m` and `--multi-roles` or `-mr`"
+            )
+
+        if (
+            (vals["ateveryone"] or vals["athere"])
+            and not ctx.channel.permissions_for(ctx.me).mention_everyone
+            and not ctx.channel.permissions_for(ctx.author).mention_everyone
+        ):
+            raise BadArgument(
+                "You do not have permission to mention everyone. Please ensure the bot and you have `Mention Everyone` permission."
+            )
 
         if vals["description"]:
             vals["description"] = " ".join(vals["description"])
@@ -149,18 +203,19 @@ class Args(Converter):
 
         if vals["button-style"]:
             vals["button-style"] = " ".join(vals["button-style"]).lower()
-            if vals["button-style"] not in BUTTON_STYLE:
-                raise BadArgument(f"Button style must be one of: {', '.join(BUTTON_STYLE.keys())}")
+            if vals["button-style"] not in BUTTON_STYLE.keys():
+                raise BadArgument(
+                    f"Button style must be one of the following: {', '.join(BUTTON_STYLE.keys())}"
+                )
         else:
             vals["button-style"] = "green"
 
         if vals["hosted-by"]:
             vals["hosted-by"] = " ".join(vals["hosted-by"])
-            try:
-                user = await MemberConverter().convert(ctx, vals["hosted-by"])
-                vals["hosted-by"] = user.id
-            except BadArgument:
+            user = await MemberConverter().convert(ctx, vals["hosted-by"])
+            if user is None:
                 raise BadArgument("Invalid user.")
+            vals["hosted-by"] = user.id
 
         if vals["colour"]:
             vals["colour"] = " ".join(vals["colour"]).lower()
@@ -187,15 +242,16 @@ class Args(Converter):
 
         vals["prize"] = " ".join(vals["prize"])
         if vals["duration"]:
+            tc = TimedeltaConverter()
             try:
-                duration = await TimedeltaConverter().convert(ctx, " ".join(vals["duration"]))
+                duration = await tc.convert(ctx, " ".join(vals["duration"]))
                 vals["duration"] = duration
             except BadArgument:
                 raise BadArgument("Invalid duration. Use `--duration` or `-d`")
             else:
                 if duration.total_seconds() < 60:
                     raise BadArgument("Duration must be greater than 60 seconds.")
-        elif vals["end"]:
+        else:
             try:
                 time = dateparser.parse(" ".join(vals["end"]))
                 if time.tzinfo is None:
@@ -207,8 +263,9 @@ class Args(Converter):
                 if time.total_seconds() < 60:
                     raise BadArgument("End date must be at least 1 minute in the future.")
             except Exception:
-                raise BadArgument("Invalid end date. Use `--end` or `-e`. Ensure to pass a timezone, otherwise it defaults to UTC.")
-        
+                raise BadArgument(
+                    "Invalid end date. Use `--end` or `-e`. Ensure to pass a timezone, otherwise it defaults to UTC."
+                )
         vals["image"] = " ".join(vals["image"]) if vals["image"] else None
         vals["thumbnail"] = " ".join(vals["thumbnail"]) if vals["thumbnail"] else None
         return vals

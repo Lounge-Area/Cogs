@@ -1,0 +1,20 @@
+{
+    "author": [
+        "Loungecove.com"
+    ],
+    "install_msg": "Giveaway cog with in-memory storage. Supports adding old giveaways and manual entrant addition. Report bugs in the 3rd party cog server.",
+    "name": "Giveaways",
+    "disabled": false,
+    "short": "Giveaway cog with in-memory storage, old giveaway recovery, and manual entrant addition.",
+    "description": "Giveaway cog with in-memory storage, featuring duration/end timing, role-based restrictions, multipliers, crash recovery, and commands to add old giveaways or entrants manually.",
+    "tags": [
+        "giveaway",
+        "giveaways",
+        "raffle"
+    ],
+    "requirements": [
+        "dateparser"
+    ],
+    "min_bot_version": "3.5.0",
+    "hidden": false
+}
