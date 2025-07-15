@@ -1,7 +1,6 @@
 import asyncio
 import contextlib
 import logging
-import sqlite3
 from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Optional
@@ -15,6 +14,7 @@ from redbot.core import Config, app_commands, commands
 from redbot.core.commands.converter import TimedeltaConverter
 from redbot.core.utils.chat_formatting import pagify
 from redbot.core.utils.menus import DEFAULT_CONTROLS, menu
+from redbot.core.data_manager import cog_data_path
 
 from .converter import Args
 from .menu import GiveawayButton, GiveawayView
@@ -27,7 +27,7 @@ GIVEAWAY_KEY = "giveaways"
 class Giveaways(commands.Cog):
     """Giveaway Commands"""
 
-    __version__ = "1.0.2"
+    __version__ = "1.0.3"
     __author__ = "flare"
 
     def format_help_for_context(self, ctx):
@@ -53,14 +53,6 @@ class Giveaways(commands.Cog):
             async with DB.transaction():
                 await GiveawayEntry.create_table(if_not_exists=True).run()
                 log.info("GiveawayEntry table created or verified.")
-                conn = sqlite3.connect('/home/floorbs/.local/share/Red-DiscordBot/data/Lounge/cogs/CogManager/cogs/giveaways/giveaways.sqlite')
-                cursor = conn.cursor()
-                cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='giveaway_entry'")
-                if cursor.fetchone():
-                    log.info("Confirmed giveaway_entry table exists in database.")
-                else:
-                    log.error("giveaway_entry table not found after creation attempt.")
-                conn.close()
         except Exception as exc:
             log.error("Failed to create or verify GiveawayEntry table: ", exc_info=exc)
             raise
@@ -77,33 +69,58 @@ class Giveaways(commands.Cog):
                     if giveaway.get("ended", False):
                         log.debug(f"Giveaway {msgid} is marked as ended, skipping.")
                         continue
-                    giveaway["endtime"] = datetime.fromtimestamp(giveaway["endtime"]).replace(
-                        tzinfo=timezone.utc
-                    )
+                    if not all(key in giveaway for key in ["guildid", "channelid", "messageid", "endtime", "prize", "emoji"]):
+                        log.error(f"Giveaway {msgid} missing required keys: {giveaway}")
+                        continue
+                    try:
+                        endtime = datetime.fromtimestamp(giveaway["endtime"], tz=timezone.utc)
+                        log.debug(f"Parsed endtime for giveaway {msgid}: {endtime}")
+                    except (TypeError, ValueError) as exc:
+                        log.error(f"Invalid endtime for giveaway {msgid}: {exc}")
+                        continue
+                    if endtime < datetime.now(timezone.utc):
+                        log.warning(f"Giveaway {msgid} endtime {endtime} is in the past, marking as ended.")
+                        giveaway["ended"] = True
+                        await self.config.custom(GIVEAWAY_KEY, guild_id, str(msgid)).set(giveaway)
+                        continue
                     giveaway_obj = Giveaway(
                         giveaway["guildid"],
                         giveaway["channelid"],
                         giveaway["messageid"],
-                        giveaway["endtime"],
+                        endtime,
                         giveaway["prize"],
                         giveaway["emoji"],
-                        **giveaway["kwargs"],
+                        **giveaway.get("kwargs", {}),
                     )
-                    entry = await GiveawayEntry.objects().get(
-                        GiveawayEntry.message_id == int(msgid)
-                    )
-                    if entry:
-                        giveaway_obj.entrants = entry.entrants
-                        log.debug(f"Loaded entrants for giveaway {msgid}: {entry.entrants}")
-                    else:
-                        log.warning(f"No database entry found for giveaway {msgid}")
+                    try:
+                        entry = await GiveawayEntry.objects().get(
+                            GiveawayEntry.message_id == int(msgid)
+                        )
+                        if entry:
+                            if not isinstance(entry.created_at, datetime):
+                                log.warning(f"Invalid created_at for giveaway {msgid}, resetting.")
+                                entry.created_at = datetime.now(timezone.utc)
+                                await entry.save()
+                            giveaway_obj.entrants = entry.entrants
+                            log.debug(f"Loaded entrants for giveaway {msgid}: {entry.entrants}")
+                        else:
+                            log.warning(f"No database entry found for giveaway {msgid}, creating empty entry.")
+                            await GiveawayEntry(
+                                guild_id=giveaway["guildid"],
+                                message_id=int(msgid),
+                                entrants=[],
+                                created_at=datetime.now(timezone.utc),
+                            ).save()
+                    except Exception as exc:
+                        log.error(f"Error loading entrants for giveaway {msgid}: ", exc_info=exc)
+                        continue
                     self.giveaways[int(msgid)] = giveaway_obj
                     log.info(f"Successfully loaded giveaway {msgid}")
                     view = GiveawayView(self)
                     view.add_item(
                         GiveawayButton(
-                            label=giveaway["kwargs"].get("button-text", "Join Giveaway"),
-                            style=giveaway["kwargs"].get("button-style", "green"),
+                            label=giveaway.get("kwargs", {}).get("button-text", "Join Giveaway"),
+                            style=giveaway.get("kwargs", {}).get("button-style", "green"),
                             emoji=giveaway["emoji"],
                             cog=self,
                             id=giveaway["messageid"],
@@ -121,13 +138,26 @@ class Giveaways(commands.Cog):
                 log.error("Exception in giveaway loop: ", exc_info=exc)
             await asyncio.sleep(15)
 
-    def cog_unload(self) -> None:
+    async def cog_unload(self) -> None:
         log.info("Unloading giveaways cog...")
+        try:
+            for msgid, giveaway in self.giveaways.items():
+                try:
+                    await self.save_entrants(giveaway)
+                    giveaway_dict = deepcopy(giveaway.__dict__)
+                    giveaway_dict["endtime"] = giveaway_dict["endtime"].timestamp()
+                    giveaway_dict["kwargs"] = giveaway_dict.get("kwargs", {})
+                    await self.config.custom(GIVEAWAY_KEY, str(giveaway.guildid), str(msgid)).set(giveaway_dict)
+                    log.debug(f"Saved giveaway {msgid} to config and database.")
+                except Exception as exc:
+                    log.error(f"Failed to save giveaway {msgid} during unload: ", exc_info=exc)
+        except Exception as exc:
+            log.error("Error during cog unload: ", exc_info=exc)
         with contextlib.suppress(Exception):
             self.bot.remove_dev_env_value("giveaways")
         self.giveaway_bgloop.cancel()
         log.debug(f"Active giveaways before unload: {list(self.giveaways.keys())}")
-        asyncio.create_task(self.session.close())
+        await self.session.close()
         log.info("Giveaways cog unloaded.")
 
     async def save_entrants(self, giveaway: Giveaway) -> None:
@@ -138,6 +168,10 @@ class Giveaways(commands.Cog):
                 )
                 if existing:
                     existing.entrants = giveaway.entrants
+                    existing.updated_at = datetime.now(timezone.utc)
+                    if not isinstance(existing.created_at, datetime):
+                        log.warning(f"Invalid created_at for giveaway {giveaway.messageid}, resetting.")
+                        existing.created_at = datetime.now(timezone.utc)
                     await existing.save()
                     log.debug(f"Updated entrants for giveaway {giveaway.messageid}")
                 else:
@@ -150,19 +184,23 @@ class Giveaways(commands.Cog):
                     log.debug(f"Created new database entry for giveaway {giveaway.messageid}")
             except Exception as exc:
                 log.error(f"Error saving entrants for giveaway {giveaway.messageid}: ", exc_info=exc)
+                raise
 
     async def check_giveaways(self) -> None:
         log.debug(f"Checking giveaways: {list(self.giveaways.keys())}")
         to_clear = []
         giveaways = deepcopy(self.giveaways)
         for msgid, giveaway in giveaways.items():
-            if giveaway.endtime < datetime.now(timezone.utc):
-                log.info(f"Giveaway {msgid} has ended, drawing winner.")
-                await self.draw_winner(giveaway)
-                to_clear.append(msgid)
-                gw = await self.config.custom(GIVEAWAY_KEY, giveaway.guildid, str(msgid)).all()
-                gw["ended"] = True
-                await self.config.custom(GIVEAWAY_KEY, giveaway.guildid, str(msgid)).set(gw)
+            try:
+                if giveaway.endtime < datetime.now(timezone.utc):
+                    log.info(f"Giveaway {msgid} endtime {giveaway.endtime} is in the past, drawing winner.")
+                    await self.draw_winner(giveaway)
+                    to_clear.append(msgid)
+                    gw = await self.config.custom(GIVEAWAY_KEY, str(giveaway.guildid), str(msgid)).all()
+                    gw["ended"] = True
+                    await self.config.custom(GIVEAWAY_KEY, str(giveaway.guildid), str(msgid)).set(gw)
+            except Exception as exc:
+                log.error(f"Error checking giveaway {msgid}: ", exc_info=exc)
         for message_id in to_clear:
             if message_id in self.giveaways:
                 log.debug(f"Removing ended giveaway {message_id} from self.giveaways")
@@ -237,10 +275,10 @@ class Giveaways(commands.Cog):
             if giveaway.messageid in self.giveaways:
                 del self.giveaways[giveaway.messageid]
             gw = await self.config.custom(
-                GIVEAWAY_KEY, giveaway.guildid, str(giveaway.messageid)
+                GIVEAWAY_KEY, str(giveaway.guildid), str(giveaway.messageid)
             ).all()
             gw["ended"] = True
-            await self.config.custom(GIVEAWAY_KEY, giveaway.guildid, str(giveaway.messageid)).set(gw)
+            await self.config.custom(GIVEAWAY_KEY, str(giveaway.guildid), str(giveaway.messageid)).set(gw)
             return
 
         if giveaway.kwargs.get("announce"):
@@ -271,10 +309,10 @@ class Giveaways(commands.Cog):
             log.debug(f"Removing giveaway {giveaway.messageid} from self.giveaways")
             del self.giveaways[giveaway.messageid]
         gw = await self.config.custom(
-            GIVEAWAY_KEY, giveaway.guildid, str(giveaway.messageid)
+            GIVEAWAY_KEY, str(giveaway.guildid), str(giveaway.messageid)
         ).all()
         gw["ended"] = True
-        await self.config.custom(GIVEAWAY_KEY, giveaway.guildid, str(giveaway.messageid)).set(gw)
+        await self.config.custom(GIVEAWAY_KEY, str(giveaway.guildid), str(giveaway.messageid)).set(gw)
         log.info(f"Giveaway {giveaway.messageid} ended successfully in guild {guild.id} with prize '{giveaway.prize}'")
 
     @commands.hybrid_group(aliases=["gw"])
@@ -351,7 +389,7 @@ class Giveaways(commands.Cog):
         if msgid not in self.locks:
             self.locks[msgid] = Lock()
         async with self.locks[msgid]:
-            data = await self.config.custom(GIVEAWAY_KEY, ctx.guild.id).all()
+            data = await self.config.custom(GIVEAWAY_KEY, str(ctx.guild.id)).all()
             if str(msgid) not in data:
                 return await ctx.send("Giveaway not found.")
             if msgid in self.giveaways:
@@ -359,13 +397,25 @@ class Giveaways(commands.Cog):
                     f"Giveaway already running. Please wait for it to end or end it via `{ctx.clean_prefix}gw end {msgid}`."
                 )
             giveaway_dict = data[str(msgid)]
-            giveaway_dict["endtime"] = datetime.fromtimestamp(giveaway_dict["endtime"]).replace(
-                tzinfo=timezone.utc
-            )
+            try:
+                giveaway_dict["endtime"] = datetime.fromtimestamp(giveaway_dict["endtime"], tz=timezone.utc)
+            except (TypeError, ValueError) as exc:
+                log.error(f"Invalid endtime for reroll of giveaway {msgid}: {exc}")
+                return await ctx.send("Invalid giveaway endtime. Check logs for details.")
+            if not all(key in giveaway_dict for key in ["guildid", "channelid", "messageid", "prize", "emoji"]):
+                log.error(f"Giveaway {msgid} missing required keys for reroll: {giveaway_dict}")
+                return await ctx.send("Invalid giveaway data. Check logs for details.")
             giveaway = Giveaway(**giveaway_dict)
-            entry = await GiveawayEntry.objects().get(GiveawayEntry.message_id == msgid)
-            if entry:
-                giveaway.entrants = entry.entrants
+            try:
+                entry = await GiveawayEntry.objects().get(GiveawayEntry.message_id == msgid)
+                if entry:
+                    if not isinstance(entry.created_at, datetime):
+                        log.warning(f"Invalid created_at for giveaway {msgid}, resetting.")
+                        entry.created_at = datetime.now(timezone.utc)
+                        await entry.save()
+                    giveaway.entrants = entry.entrants
+            except Exception as exc:
+                log.error(f"Error loading entrants for reroll of giveaway {msgid}: ", exc_info=exc)
             try:
                 await self.draw_winner(giveaway)
             except GiveawayExecError as e:
@@ -382,13 +432,17 @@ class Giveaways(commands.Cog):
         if msgid in self.giveaways:
             if self.giveaways[msgid].guildid != ctx.guild.id:
                 return await ctx.send("Giveaway not found.")
-            await self.draw_winner(self.giveaways[msgid])
-            del self.giveaways[msgid]
-            gw = await self.config.custom(GIVEAWAY_KEY, ctx.guild.id, str(msgid)).all()
-            gw["ended"] = True
-            await self.config.custom(GIVEAWAY_KEY, ctx.guild.id, str(msgid)).set(gw)
-            await ctx.tick()
-            log.info(f"Manually ended giveaway {msgid} in guild {ctx.guild.id}")
+            try:
+                await self.draw_winner(self.giveaways[msgid])
+                del self.giveaways[msgid]
+                gw = await self.config.custom(GIVEAWAY_KEY, str(ctx.guild.id), str(msgid)).all()
+                gw["ended"] = True
+                await self.config.custom(GIVEAWAY_KEY, str(ctx.guild.id), str(msgid)).set(gw)
+                await ctx.tick()
+                log.info(f"Manually ended giveaway {msgid} in guild {ctx.guild.id}")
+            except Exception as exc:
+                log.error(f"Error ending giveaway {msgid}: ", exc_info=exc)
+                await ctx.send("Error ending giveaway. Check logs for details.")
         else:
             await ctx.send("Giveaway not found.")
 
@@ -566,7 +620,7 @@ class Giveaways(commands.Cog):
         """Explanation of giveaway advanced and the arguments it supports."""
         msg = """
         Giveaway advanced creation.
-        NOTE: Giveaways are checked every 20 seconds, this means that the giveaway may end up being slightly longer than the specified duration.
+        NOTE: Giveaways are checked every 15 seconds, this means that the giveaway may end up being slightly longer than the specified duration.
 
         Giveaway advanced contains many different flags that can be used to customize the giveaway.
         The flags are as follows:
@@ -577,7 +631,7 @@ class Giveaways(commands.Cog):
         Required Mutual Exclusive Arguments:
         You must one ONE of these, but not both:
         `--duration`: The duration of the giveaway. Must be in format such as `2d3h30m`.
-        `--end`: The end time of the giveaway. Must be in format such as `2021-12-23T30:00:00.000Z`, `tomorrow at 3am`, `in 4 hours`. Defaults to UTC if no timezone is provided.
+        `--end`: The end time of the giveaway. Must be in format such as `2026-09-05T00:00+02:00`, `tomorrow at 3am`, `in 4 hours`. Defaults to UTC if no timezone is provided.
 
         Optional arguments:
         `--channel`: The channel to post the giveaway in. Will default to this channel if not specified.
@@ -638,7 +692,7 @@ class Giveaways(commands.Cog):
             return await ctx.send("Giveaway not found.")
         for flag in flags:
             if flags[flag]:
-                if flag in ["prize", "duration", "end", "channel", "emoji"]:
+                if flag in ["prize", "duration", "channel", "emoji"]:
                     setattr(giveaway, flag, flags[flag])
                 elif flag in ["roles", "multi_roles", "blacklist", "mentions"]:
                     giveaway.kwargs[flag] = [x.id for x in flags[flag]]
@@ -650,7 +704,7 @@ class Giveaways(commands.Cog):
         giveaway_dict["endtime"] = giveaway_dict["endtime"].timestamp()
         giveaway_dict["duration"] = giveaway_dict["duration"].total_seconds()
         del giveaway_dict["kwargs"]["colour"]
-        await self.config.custom(GIVEAWAY_KEY, ctx.guild.id, str(msgid)).set(giveaway_dict)
+        await self.config.custom(GIVEAWAY_KEY, str(ctx.guild.id), str(msgid)).set(giveaway_dict)
         await self.save_entrants(giveaway)
         message = ctx.guild.get_channel(giveaway.channelid).get_partial_message(giveaway.messageid)
         hosted_by = (
@@ -689,8 +743,8 @@ class Giveaways(commands.Cog):
             settings.append(f"Account Age: {arguments['created']} days")
         if arguments.get("multiplier") and arguments.get("multi_roles"):
             multi_roles = {ctx.guild.get_role(r) for r in arguments["multi_roles"] if ctx.guild.get_role(r) is not None}
-        if multi_roles:
-            settings.append(
-                f"Multiplier: {arguments['multiplier']}x for {', '.join(r.mention() for r in multi_roles)}"
-            )
+            if multi_roles:
+                settings.append(
+                    f"Multiplier: {arguments['multiplier']}x for {', '.join(r.mention for r in multi_roles)}"
+                )
         return "\n".join(settings)

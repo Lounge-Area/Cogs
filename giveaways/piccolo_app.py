@@ -3,9 +3,12 @@ from piccolo.columns import BigInt, Array, Timestamp
 from piccolo.table import Table
 from piccolo.engine.sqlite import SQLiteEngine
 from redbot.core.data_manager import cog_data_path
+import logging
+
+log = logging.getLogger("red.flare.giveaways")
 
 # SQLite configuration
-DB = SQLiteEngine(path=str(cog_data_path(raw_name="Giveaways") / "giveaways.db"))
+DB = SQLiteEngine(path=str(cog_data_path(raw_name="Giveaways") / "giveaways.sqlite"))
 
 class GiveawayEntry(Table, db=DB):
     guild_id = BigInt()
@@ -19,3 +22,5 @@ APP_CONFIG = AppConfig(
     migrations_folder_path="",
     table_classes=[GiveawayEntry],
 )
+
+log.info(f"Initialized SQLite database at: {DB.path}")
