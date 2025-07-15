@@ -12,20 +12,24 @@ from redbot.core.data_manager import cog_data_path
 
 log = logging.getLogger("red.flare.cleanup_giveaways")
 
+# Define the SQLite database path (same as used by the giveaways cog)
 DB = SQLiteEngine(path=str(cog_data_path(raw_name="Giveaways") / "giveaways.sqlite"))
 
+# Define the GiveawayEntry table
 class GiveawayEntry(Table, db=DB):
     guild_id = Integer()
     message_id = Integer(index=True)
     entrants = Array(base_column=Integer())
     created_at = Timestamp(default=datetime.now)
 
+# Piccolo app configuration
 APP_CONFIG = AppConfig(
     app_name="giveaways",
     migrations_folder_path=str(Path(__file__).parent / "migrations"),
     table_classes=[GiveawayEntry],
 )
 
+# Config key for giveaways
 GIVEAWAY_KEY = "GIVEAWAY"
 
 class CleanupGiveaways(commands.Cog):
@@ -73,6 +77,14 @@ class CleanupGiveaways(commands.Cog):
                         await self.config.custom(GIVEAWAY_KEY, guild_id, str(msgid)).clear()
                         invalid_count += 1
                         continue
+                    # Validate endtime
+                    try:
+                        datetime.fromtimestamp(giveaway["endtime"], tz=timezone.utc)
+                    except (TypeError, ValueError):
+                        log.error(f"Invalid endtime for giveaway {msgid}, clearing from Config.")
+                        await self.config.custom(GIVEAWAY_KEY, guild_id, str(msgid)).clear()
+                        invalid_count += 1
+                        continue
                     valid_giveaways.append((int(guild_id), int(msgid)))
 
             # Check database entries
@@ -88,19 +100,21 @@ class CleanupGiveaways(commands.Cog):
                     await GiveawayEntry.delete().where(GiveawayEntry.message_id == message_id).run()
                     invalid_count += 1
                 elif not isinstance(created_at, datetime):
-                    log.warning(f"Invalid created_at for giveaway {message_id}, resetting.")
-                    await GiveawayEntry.update({GiveawayEntry.created_at: datetime.now()}).where(
+                    log.warning(f"Invalid created_at for giveaway {message_id}, resetting to current time.")
+                    await GiveawayEntry.update({GiveawayEntry.created_at: datetime.now(tz=timezone.utc)}).where(
                         GiveawayEntry.message_id == message_id
                     ).run()
                     fixed_count += 1
 
             await ctx.send(
-                f"Cleanup complete. Fixed {fixed_count} giveaways (mapped 'title' to 'prize'). "
+                f"Cleanup complete. Fixed {fixed_count} giveaways (mapped 'title' to 'prize' or reset 'created_at'). "
                 f"Removed {invalid_count} invalid entries."
             )
             log.info(
                 f"Cleanup complete. Fixed {fixed_count} giveaways, removed {invalid_count} invalid entries."
             )
 
-def setup(bot):
-    bot.add_cog(CleanupGiveaways(bot))
+async def setup(bot):
+    """Setup function to register the CleanupGiveaways cog."""
+    cog = CleanupGiveaways(bot)
+    await bot.add_cog(cog)
