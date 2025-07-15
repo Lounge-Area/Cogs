@@ -1,6 +1,7 @@
 import logging
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import discord
 from piccolo.conf.apps import AppConfig
@@ -79,7 +80,7 @@ class CleanupGiveaways(commands.Cog):
                         continue
                     # Validate endtime
                     try:
-                        datetime.fromtimestamp(giveaway["endtime"], tz=timezone.utc)
+                        datetime.fromtimestamp(giveaway["endtime"], tz=ZoneInfo("UTC"))
                     except (TypeError, ValueError):
                         log.error(f"Invalid endtime for giveaway {msgid}, clearing from Config.")
                         await self.config.custom(GIVEAWAY_KEY, guild_id, str(msgid)).clear()
@@ -101,7 +102,7 @@ class CleanupGiveaways(commands.Cog):
                     invalid_count += 1
                 elif not isinstance(created_at, datetime):
                     log.warning(f"Invalid created_at for giveaway {message_id}, resetting to current time.")
-                    await GiveawayEntry.update({GiveawayEntry.created_at: datetime.now(tz=timezone.utc)}).where(
+                    await GiveawayEntry.update({GiveawayEntry.created_at: datetime.now(tz=ZoneInfo("UTC"))}).where(
                         GiveawayEntry.message_id == message_id
                     ).run()
                     fixed_count += 1
