@@ -1,5 +1,5 @@
 {
-    "author": ["Lounge"],
+    "author": ["Loungecove.com"],
     "install_msg": "Thanks for installing the VoteTracker cog! Use [p]help VoteTracker to see all commands.",
     "name": "VoteTracker",
     "short": "Track votes and manage giveaways with vote-based weighting",

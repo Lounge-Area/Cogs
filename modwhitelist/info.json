@@ -1,5 +1,5 @@
 {
-    "author": ["Lounge"],
+    "author": ["Loungecove.com"],
     "install_msg": "Thanks for installing the ModWhitelist cog! Use [p]help ModWhitelist to see all commands.",
     "name": "ModWhitelist",
     "short": "Whitelist channels to exclude them from bot moderation",

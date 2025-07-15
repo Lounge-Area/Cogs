@@ -69,6 +69,10 @@ class Giveaways(commands.Cog):
                     if giveaway.get("ended", False):
                         log.debug(f"Giveaway {msgid} is marked as ended, skipping.")
                         continue
+                    # Handle legacy 'title' key by mapping to 'prize'
+                    if "title" in giveaway and "prize" not in giveaway:
+                        log.warning(f"Giveaway {msgid} uses legacy 'title' key, mapping to 'prize'.")
+                        giveaway["prize"] = giveaway["title"]
                     if not all(key in giveaway for key in ["guildid", "channelid", "messageid", "endtime", "prize", "emoji"]):
                         log.error(f"Giveaway {msgid} missing required keys: {giveaway}")
                         continue

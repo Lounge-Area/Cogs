@@ -1,0 +1,12 @@
+{
+  "author": ["Loungecove.com"],
+  "name": "CleanupGiveaways",
+  "short": "Cleans up invalid giveaway entries",
+  "description": "A utility cog to clean up invalid giveaway Config and database entries for the giveaways cog.",
+  "install_msg": "Thank you for installing CleanupGiveaways. Use [p]cleanup_giveaways to fix invalid giveaway data.",
+  "requirements": [],
+  "tags": ["giveaways", "cleanup", "utility"],
+  "permissions": [],
+  "min_bot_version": "3.5.0",
+  "end_user_data_statement": "This cog does not store any end-user data beyond what is managed by the giveaways cog."
+}
